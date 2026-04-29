@@ -1,90 +1,136 @@
-# Image example
+# Anomaly Detection with Flow Matching on BraTS2021
 
-## Training instructions
+Flow Matching generative model applied to brain tumor anomaly detection on BraTS2021 MRI data. The model is trained on healthy brain scans, then used to reconstruct diseased scans — the reconstruction error localizes tumor regions.
 
-1. Download and unpack blurred ImageNet from the [official website](https://image-net.org/download.php).
+## Method
 
-```
-export IMAGENET_DIR=~/flow_matching/examples/image/data/
-export IMAGENET_RES=64
-tar -xf ~/Downloads/train_blurred.tar.gz -C $IMAGENET_DIR
-```
+- Train a conditional flow matching UNet on **healthy** brain MRI slices (class 0)
+- At inference, partially noise a diseased scan to timestep `t`, then denoise toward the healthy distribution using classifier-free guidance
+- The pixel-wise reconstruction difference (MAD) is thresholded with Otsu to produce a tumor mask
+- Evaluated with DICE, IoU, and AUROC
 
-2. Downsample Imagenet to the desired resolution.
+## Setup
 
-```
-cd ~/
-git clone git@github.com:PatrykChrabaszcz/Imagenet32_Scripts.git
-python Imagenet32_Scripts/image_resizer_imagent.py -i ${IMAGENET_DIR}train_blurred -o ${IMAGENET_DIR}train_blurred_$IMAGENET_RES -s $IMAGENET_RES -a box  -r -j 10 
-```
-
-3. Set up the virtual environment. First, set up the virtual environment by following the steps in the repository's `README.md`. Then,
-
-```
-conda activate flow_matching
-
-cd examples/image
+```bash
+git clone https://github.com/minh2004pd/anomaly_detection_flowmatching.git
+cd anomaly_detection_flowmatching
 pip install -r requirements.txt
 ```
 
-4. [Optional] Test-run training locally. A test run executes one step of training followed by one step of evaluation.
+## Data Preparation
 
-```
-python train.py --data_path=${IMAGENET_DIR}train_blurred_$IMAGENET_RES/box/ --test_run
-```
+### Option 1 — Download preprocessed data from Kaggle (recommended)
 
-5. Launch training on a SLURM cluster
-
-```
-python submitit_train.py --data_path=${IMAGENET_DIR}train_blurred_$IMAGENET_RES/box/ 
+```bash
+pip install kaggle
+kaggle datasets download minhdon/brats2021-preprocessed
+unzip brats2021-preprocessed.zip -d data/
 ```
 
-6. Evaluate the model using the `--eval_only` flag. The evaluation script will generate snapshots under the `/snapshots` folder. Specify the `--compute_fid` flag to also compute the FID with respect to the training set. Make sure to specify your most recent checkpoint to resume from. The results are printed to `log.txt`.
+The dataset contains:
+- `data/brats2021/healthy/` — healthy brain .npy slices (4 modalities, 256×256)
+- `data/brats2021/unhealthy/` — tumor brain .npy slices + ground truth masks
+- `data/brats2021/preprocessed_split.json` — case-level 80/20 train/val split
+
+### Option 2 — Preprocess from raw BraTS2021 NIfTI
+
+Download the raw dataset from [Kaggle BraTS2021](https://www.kaggle.com/competitions/rsna-miccai-brain-tumor-radiogenomic-classification), then:
+
+```bash
+python preprocess_brats.py --data_dir /path/to/BraTS2021_Training_Data --output_dir ./data/brats2021
+```
+
+Each `.npy` slice has shape `(4, 256, 256)` — channels are `[FLAIR, T1, T1ce, T2]`, normalized to `[0, 1]`.
+
+## Training
+
+```bash
+# Quick validation (1 step, no data required)
+python train.py --dataset=cifar10 --test_run
+
+# Train on BraTS2021 (healthy only — unsupervised anomaly detection)
+python train.py \
+  --dataset=brats \
+  --data_path=./data/brats2021 \
+  --healthy_only \
+  --batch_size=16 \
+  --epochs=200 \
+  --output_dir=./output_brats
+
+# With EMA (recommended for best results)
+python train.py \
+  --dataset=brats \
+  --data_path=./data/brats2021 \
+  --healthy_only \
+  --batch_size=16 \
+  --epochs=200 \
+  --use_ema \
+  --output_dir=./output_brats
+```
+
+Checkpoints and logs are saved to `--output_dir`. Resume training with `--resume ./output_brats/checkpoint.pth`.
+
+## Inference & Anomaly Detection
+
+```bash
+python infer_anomaly.py \
+  --checkpoint ./output_brats/checkpoint.pth \
+  --data_path ./data/brats2021 \
+  --cfg_scale 8.0 \
+  --t 0.8 \
+  --step_size 0.02
+```
+
+Key parameters:
+
+| Parameter | Description | Default |
+|---|---|---|
+| `--t` | Noise level (0=clean, 1=pure noise). Higher → more reconstruction, slower | 0.8 |
+| `--cfg_scale` | Classifier-free guidance strength. Higher → stronger healthy prior | 8.0 |
+| `--step_size` | ODE integration step size. Smaller → more accurate, slower | 0.02 |
+
+Output: per-case DICE, IoU scores + visualization grid saved to `--output_dir`.
+
+## Hyperparameter Search
+
+Run the 3-phase sweep to find optimal `t`, `cfg_scale`, `step_size`:
+
+```bash
+python run_experiments.py 1                    # Phase 1: sweep t
+python run_experiments.py 2 0.6               # Phase 2: sweep cfg_scale (best_t=0.6)
+python run_experiments.py 3 0.6 20.0          # Phase 3: sweep step_size
+```
+
+## Project Structure
 
 ```
-python submitit_train.py --data_path=${IMAGENET_DIR}train_blurred_$IMAGENET_RES/box/ --resume=./output_dir/checkpoint-899.pth --compute_fid --eval_only
+flow-matching-main/
+├── train.py                  # Main training script
+├── infer_anomaly.py          # Anomaly detection inference + metrics
+├── run_experiments.py        # Hyperparameter sweep runner
+├── preprocess_brats.py       # Raw NIfTI → .npy preprocessing
+├── flow_matching/            # Core flow matching library
+│   ├── path/                 # Probability paths (OT, Affine, Geodesic)
+│   ├── loss/                 # Flow matching loss
+│   └── solver/               # ODE solvers (dopri5, Euler)
+├── models/
+│   ├── unet.py               # UNet velocity field model
+│   └── model_configs.py      # Dataset-specific configs
+├── training/
+│   ├── train_loop.py         # Training loop
+│   └── eval_loop.py          # Evaluation + FID
+└── data/brats2021/
+    ├── healthy/              # Healthy slices (train + val)
+    ├── unhealthy/            # Tumor slices (val only)
+    └── preprocessed_split.json
 ```
-
-
-## Results
-| Data                  | Model type                       | Epochs | FID  | Command                                                                                                                                                                                                                                                                                                                                                   |
-|-----------------------|----------------------------------|-------|------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Cifar10               | Unconditional UNet               | 1800  | 2.07 | `python submitit_train.py \`<br>`--dataset=cifar10 \`<br>`--batch_size=64 \`<br>`--nodes=1 \`<br>`--accum_iter=1 \`<br>`--eval_frequency=100 \`<br>`--epochs=3000 \`<br>`--class_drop_prob=1.0 \`<br>`--cfg_scale=0.0 \`<br>`--compute_fid \`<br>`--ode_method heun2 \`<br>`--ode_options '{"nfe": 50}' \`<br>`--use_ema \`<br>`--edm_schedule \`<br>`--skewed_timesteps` |
-| ImageNet32 (Blurred)  | Class conditional Unet           | 900   | 1.14 | `export IMAGENET_RES=32 \`<br>`python submitit_train.py \`<br>`--data_path=${IMAGENET_DIR}train_blurred_$IMAGENET_RES/box/ \`<br>`--batch_size=32 \`<br>`--nodes=8 \`<br>`--accum_iter=1 \`<br>`--eval_frequency=100 \`<br>`--decay_lr \`<br>`--compute_fid \`<br>`--ode_method dopri5 \`<br>`--ode_options '{"atol": 1e-5, "rtol":1e-5}'` |
-| ImageNet64 (Blurred)  | Class conditional Unet           | 900   | 1.64 | `export IMAGENET_RES=64 \`<br>`python submitit_train.py \`<br>`--data_path=${IMAGENET_DIR}train_blurred_$IMAGENET_RES/box/ \`<br>`--batch_size=32 \`<br>`--nodes=8 \`<br>`--accum_iter=1 \`<br>`--eval_frequency=100 \`<br>`--decay_lr \`<br>`--compute_fid \`<br>`--ode_method dopri5 \`<br>`--ode_options '{"atol": 1e-5, "rtol":1e-5}'` |
-| Cifar10 (Discrete Flow) | Unconditional Unet           | 2500   | 3.58 | `python submitit_train.py \`<br>`--dataset=cifar10 \`<br>`--nodes=1 \`<br>`--discrete_flow_matching \`<br>`--batch_size=32 \`<br>`--accum_iter=1 \`<br>`--cfg_scale=0.0 \`<br>`--use_ema \`<br>`--epochs=3000 \`<br>`--class_drop_prob=1.0 \`<br>`--compute_fid \`<br>`--sym_func` |
-
-
 
 ## Acknowledgements
 
-This example partially use code from:
-- [Guided diffusion](https://github.com/openai/guided-diffusion/)
-- [ConvNext](https://github.com/facebookresearch/ConvNeXt)
+- [Flow Matching](https://github.com/facebookresearch/flow_matching) — Meta AI
+- [Guided Diffusion](https://github.com/openai/guided-diffusion) — OpenAI
+- BraTS2021 dataset — RSNA-MICCAI Brain Tumor Challenge
 
 ## License
 
-The majority of the code in this example is licensed under CC-BY-NC, however portions of the project are available under separate license terms: 
-- The UNet model is under MIT license.
-- The distributed computing and the grad scaler code is under MIT license.
-
-## Citations
-
-Deng, Jia, et al. "Imagenet: A large-scale hierarchical image database." 2009 IEEE conference on computer vision and pattern recognition. Ieee, 2009.
-
-Karras, Tero, et al. "Elucidating the design space of diffusion-based generative models." Advances in neural information processing systems 35 (2022): 26565-26577.
-
-Ronneberger, Olaf, Philipp Fischer, and Thomas Brox. "U-net: Convolutional networks for biomedical image segmentation." Medical image computing and computer-assisted intervention–MICCAI 2015: 18th international conference, Munich, Germany, October 5-9, 2015, proceedings, part III 18. Springer International Publishing, 2015.
-
-
-
-Run inference:
-
-# All digits, 4 samples each:
-python infer.py --checkpoint ./output_mnist/checkpoint.pth --labels 0 1 2 3 4 5 6 7 8 9
-
-# Just digit 7, 16 samples:
-python infer.py --checkpoint ./output_mnist/checkpoint.pth --labels 7 --num_per_label 16
-
-# Override CFG scale:
-python infer.py --checkpoint ./output_mnist/checkpoint.pth --labels 3 5 --cfg_scale 4.0  # flowmatching
+CC-BY-NC. UNet model and distributed computing code are under MIT license.
