@@ -1,0 +1,10 @@
+submitit
+torchmetrics[image]
+torchvision
+torchdiffeq
+opencv-python
+scipy
+torch-fidelity
+lightning-utilities
+cloudpickle
+tqdm

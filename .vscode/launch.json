@@ -1,0 +1,35 @@
+{
+    "configurations": [
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Launch Simple Shape",
+            "program": "${workspaceFolder}/train.py",
+            "args": ["--dataset", "simple_shape", "--num_samples", "10000", "--image_size", "64", "--batch_size", "32", "--epochs", "200", "--accum_iter", "1", "--lr", "0.0001", "--optimizer_betas", "0.9", "0.95", "--decay_lr", "--eval_frequency", "20"],
+            // set working directory to the root of the project
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Launch Mnist",
+            "program": "${workspaceFolder}/train.py",
+            "args": ["--dataset", "mnist", "--num_samples", "10000", "--image_size", "64", "--batch_size", "32", "--epochs", "200", "--accum_iter", "1", "--lr", "0.0001", "--optimizer_betas", "0.9", "0.95", "--decay_lr", "--eval_frequency", "1", "--output_dir", "./output_dir/mnist"],
+            // set working directory to the root of the project
+            "cwd": "${workspaceFolder}"
+        },
+        
+        // debug current working file
+        {
+            "type": "debugpy",
+            "request": "launch",
+            "name": "Python: Current File",
+            "program": "${file}",
+            "cwd": "${fileDirname}",
+            "env": {},
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
