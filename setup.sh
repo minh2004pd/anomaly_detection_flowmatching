@@ -3,7 +3,8 @@
 # Usage: DATA_PATH=./data/brats2021 bash setup.sh
 set -e
 
-DATA_PATH="${DATA_PATH:-./data/brats2021}"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DATA_PATH="${DATA_PATH:-$SCRIPT_DIR/../data/brats2021}"
 INPUT_DIR="${INPUT_DIR:-$DATA_PATH/extracted_data}"
 
 # Install uv if not present

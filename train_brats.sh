@@ -1,6 +1,6 @@
 #!/bin/bash
 
-DATA_PATH="${DATA_PATH:-./data/brats2021}"
+DATA_PATH="${DATA_PATH:-$(cd "$(dirname "$0")/.." && pwd)/data/brats2021}"
 OUTPUT_DIR="${OUTPUT_DIR:-./output_brats}"
 LOG_DIR="${LOG_DIR:-./logs}"
 
