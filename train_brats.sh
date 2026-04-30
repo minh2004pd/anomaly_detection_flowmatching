@@ -29,10 +29,11 @@ uv run python train.py \
   --class_drop_prob=0.15 \
   --cfg_scale=3.0 \
   --use_ema \
-  --eval_frequency=10 \
-  --fid_samples=50 \
+  --eval_frequency=0 \
   --num_workers=6 \
   --output_dir="$OUTPUT_DIR" \
+  # --wandb \
+  # --wandb_project="flow-matching-brats" \
   2>&1 | tee "$LOG_DIR/train_brats.log"
 
 echo "Training completed!"
