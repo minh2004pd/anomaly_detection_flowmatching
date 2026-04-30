@@ -11,6 +11,13 @@ LOG_DIR="${LOG_DIR:-./logs}"
 
 mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
 
+# Auto-resume if checkpoint exists
+RESUME_ARG=""
+if [ -f "$OUTPUT_DIR/checkpoint.pth" ]; then
+    RESUME_ARG="--resume=$OUTPUT_DIR/checkpoint.pth"
+    echo "Resuming from $OUTPUT_DIR/checkpoint.pth"
+fi
+
 # Train BraTS (healthy + unhealthy, 80-20 split built into BraTSPreprocessedDataset)
 # use_preprocessed loads from .npy slices with auto 80-20 case-level split (seed=42)
 # Gradient checkpointing is enabled via model_configs.py ("brats" config has use_checkpoint=True)
@@ -32,6 +39,7 @@ uv run python train.py \
   --eval_frequency=10 \
   --num_workers=6 \
   --output_dir="$OUTPUT_DIR" \
+  $RESUME_ARG \
   # --wandb \
   # --wandb_project="flow-matching-brats" \
   2>&1 | tee "$LOG_DIR/train_brats.log"
