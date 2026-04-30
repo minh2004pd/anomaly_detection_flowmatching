@@ -33,7 +33,7 @@ uv run python train.py \
 echo "Training completed!"
 
 # Upload checkpoint to HuggingFace if HF_REPO is set
-# Usage: HF_REPO=vipghn2003/brats-flow-matching HF_TOKEN=hf_xxx bash train_brats.sh
+# Usage: HF_REPO=minh2k4/brats-flow-matching HF_TOKEN=hf_xxx bash train_brats.sh
 if [ -n "$HF_REPO" ]; then
     echo "Uploading checkpoint to HuggingFace: $HF_REPO ..."
     uv run python hf_upload.py \
