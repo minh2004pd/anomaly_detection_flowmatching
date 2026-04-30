@@ -16,14 +16,17 @@ fi
 cd "$(dirname "$0")"
 uv sync
 
-# Step 1: Preprocess raw .nii.gz -> .npy slices
-if [ ! -d "$DATA_PATH/healthy" ]; then
+# Step 1: Preprocess raw .nii.gz -> .npy slices (skip if already done)
+if [ -d "$DATA_PATH/healthy" ] && [ -d "$DATA_PATH/unhealthy" ]; then
+    echo "Preprocessed slices found at $DATA_PATH, skipping process_brats.py."
+elif [ -d "$INPUT_DIR" ]; then
     echo "Preprocessing BraTS .nii.gz -> .npy slices..."
     uv run python process_brats.py \
         --input_dir "$INPUT_DIR" \
         --output_dir "$DATA_PATH"
 else
-    echo "Preprocessed slices already exist, skipping process_brats.py."
+    echo "Warning: No raw data at $INPUT_DIR and no preprocessed data at $DATA_PATH/healthy."
+    echo "Skipping preprocessing. Make sure DATA_PATH points to preprocessed data."
 fi
 
 # Step 2: Generate train/val split JSON
