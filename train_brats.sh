@@ -21,6 +21,7 @@ fi
 # Train BraTS (healthy + unhealthy, 80-20 split built into BraTSPreprocessedDataset)
 # use_preprocessed loads from .npy slices with auto 80-20 case-level split (seed=42)
 # Gradient checkpointing is enabled via model_configs.py ("brats" config has use_checkpoint=True)
+set -o pipefail
 uv run python train.py \
   --dataset=brats \
   --data_path="$DATA_PATH" \

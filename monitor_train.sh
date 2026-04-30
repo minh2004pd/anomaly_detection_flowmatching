@@ -7,7 +7,7 @@ set -a && source .env && set +a
 
 LOG_DIR="${LOG_DIR:-./logs}"
 LOG="$LOG_DIR/train_brats.log"
-MAX_RESTARTS=3
+MAX_RESTARTS=1
 restart_count=0
 
 # k66 connection — set these in .env
@@ -34,11 +34,13 @@ trigger_ai_fix() {
     fi
 
     notify "Sending crash log to k66 for AI fix..."
-    # Escape the error log and send to k66
     local escaped=$(echo "$error_log" | head -c 3000 | sed "s/'/'\\\\''/g")
+    local vast_ip=$(hostname -I | awk '{print $1}')
+    local vast_ssh_port=${SSH_CLIENT##* }
+    # SSH_PORT env var set by Vast.ai; fallback to 22
+    local vast_port="${SSH_PORT:-22}"
     ssh -o StrictHostKeyChecking=no -p "$K66_PORT" "${K66_USER}@${K66_HOST}" \
-        "bash ${K66_DIR}/fix_and_notify.sh '$escaped' $(hostname -I | awk '{print $1}') $SSH_PORT" &
-    # Don't wait — k66 will SSH back to restart when done
+        "bash ${K66_DIR}/fix_and_notify.sh '$escaped' '$vast_ip' '$vast_port'" &
     return 0
 }
 
@@ -50,8 +52,14 @@ while [ $restart_count -lt $MAX_RESTARTS ]; do
     bash train_brats.sh
     exit_code=$?
 
+    # exit 0 = success, exit 130 = Ctrl+C (user intentional stop)
     if [ $exit_code -eq 0 ]; then
         notify "Training completed successfully!"
+        exit 0
+    fi
+
+    if [ $exit_code -eq 130 ]; then
+        notify "Training stopped by user (Ctrl+C). Not restarting."
         exit 0
     fi
 
@@ -62,8 +70,8 @@ while [ $restart_count -lt $MAX_RESTARTS ]; do
 
     if [ $restart_count -lt $MAX_RESTARTS ]; then
         if trigger_ai_fix "$last_error"; then
-            notify "Waiting 60s for k66 to fix and signal back..."
-            sleep 60
+            notify "Waiting 90s for k66 to fix and signal back..."
+            sleep 90
             git pull
         else
             notify "Pulling latest and retrying in 15s..."

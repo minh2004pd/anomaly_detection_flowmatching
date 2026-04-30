@@ -40,8 +40,9 @@ Tasks:
 3. Run: git add -A && git commit -m 'fix: <short description>' && git push
 Do NOT ask questions. Fix and push directly.
 " 2>&1 | tail -30
+claude_exit=${PIPESTATUS[0]}
 
-if [ $? -eq 0 ]; then
+if [ $claude_exit -eq 0 ]; then
     notify "Claude pushed a fix. Signaling Vast.ai to pull and restart..."
     ssh -o StrictHostKeyChecking=no -p "$VAST_PORT" root@"$VAST_HOST" \
         "cd $VAST_DIR && git pull && set -a && source .env && set +a && bash monitor_train.sh > logs/train_brats.log 2>&1 &"
