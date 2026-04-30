@@ -29,7 +29,7 @@ uv run python train.py \
   --class_drop_prob=0.15 \
   --cfg_scale=3.0 \
   --use_ema \
-  --eval_frequency=1 \
+  --eval_frequency=10 \
   --fid_samples=50 \
   --num_workers=6 \
   --output_dir="$OUTPUT_DIR" \
