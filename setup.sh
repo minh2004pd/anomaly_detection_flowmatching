@@ -4,7 +4,12 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-DATA_PATH="${DATA_PATH:-$SCRIPT_DIR/../data/brats2021}"
+# On Vast.ai server data is at /workspace/brats2021; locally at <repo>/../data/brats2021
+if [ -d "/workspace/brats2021" ]; then
+    DATA_PATH="${DATA_PATH:-/workspace/brats2021}"
+else
+    DATA_PATH="${DATA_PATH:-$SCRIPT_DIR/../data/brats2021}"
+fi
 INPUT_DIR="${INPUT_DIR:-$DATA_PATH/extracted_data}"
 
 # Install uv if not present

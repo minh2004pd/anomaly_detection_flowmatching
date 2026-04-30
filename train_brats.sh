@@ -1,6 +1,11 @@
 #!/bin/bash
 
-DATA_PATH="${DATA_PATH:-$(cd "$(dirname "$0")/.." && pwd)/data/brats2021}"
+# On Vast.ai server data is at /workspace/brats2021; locally at <repo>/../data/brats2021
+if [ -d "/workspace/brats2021" ]; then
+    DATA_PATH="${DATA_PATH:-/workspace/brats2021}"
+else
+    DATA_PATH="${DATA_PATH:-$(cd "$(dirname "$0")/.." && pwd)/data/brats2021}"
+fi
 OUTPUT_DIR="${OUTPUT_DIR:-./output_brats}"
 LOG_DIR="${LOG_DIR:-./logs}"
 
