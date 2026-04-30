@@ -24,7 +24,6 @@ import cv2
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import nibabel as nib
 import numpy as np
 import torch
 import torch.nn as nn
@@ -45,14 +44,10 @@ def get_args():
     p = argparse.ArgumentParser(description="BraTS2021 anomaly detection with reverse+forward ODE")
     p.add_argument("--checkpoint",    type=str, required=True)
     p.add_argument("--data_path",     type=str, required=True,
-                   help="BraTS2021 root containing healthy/ unhealthy/ extracted_data/ "
-                        "and preprocessed_split.json")
+                   help="BraTS2021 root containing healthy/ unhealthy/ and preprocessed_split.json")
     p.add_argument("--split_file",    type=str, default=None,
                    help="Path to preprocessed_split.json. "
                         "Defaults to <data_path>/preprocessed_split.json")
-    p.add_argument("--extracted_dir", type=str, default=None,
-                   help="Folder with NIfTI case dirs for GT masks. "
-                        "Defaults to <data_path>/extracted_data")
     p.add_argument("--t",             type=float, default=0.6,
                    help="Encoding depth: fraction along ODE from data (1) toward noise (0).")
     p.add_argument("--step_size",     type=float, default=0.02)
@@ -65,43 +60,29 @@ def get_args():
     return p.parse_args()
 
 
-# ─── Data loading from .npy + NIfTI seg ──────────────────────────────────────
+# ─── Data loading from .npy ───────────────────────────────────────────────────
 
-def _parse_slice_path(rel_path: str):
-    """'unhealthy/BraTS2021_00000/slice_080.npy' → (case_id, slice_idx)"""
-    parts = rel_path.replace("\\", "/").split("/")
-    case_id  = parts[1]
-    slice_idx = int(parts[2].replace("slice_", "").replace(".npy", ""))
-    return case_id, slice_idx
-
-
-def load_sample(data_path: str, extracted_dir: str, entry: dict):
+def load_sample(data_path: str, entry: dict):
     """
     Load one val entry from preprocessed_split.json.
 
     Returns:
         image_np  : (4, 256, 256) float32 [0,1]  — from .npy
         label     : int  0=healthy  1=unhealthy
-        mask_np   : (1, 256, 256) float32         — from NIfTI seg (zeros if healthy)
+        mask_np   : (1, 256, 256) float32         — from _seg.npy (zeros if missing)
     """
     rel_path = entry["path"]
     label    = int(entry["label"])
 
     image_np = np.load(os.path.join(data_path, rel_path)).astype(np.float32)
 
-    case_id, slice_idx = _parse_slice_path(rel_path)
-    seg_path = os.path.join(extracted_dir, case_id, f"{case_id}_seg.nii.gz")
-
+    seg_path = os.path.join(data_path, rel_path.replace(".npy", "_seg.npy"))
     if os.path.exists(seg_path):
-        seg_vol = np.asarray(nib.load(seg_path).dataobj[..., slice_idx])  # (H, W)
-        h, w   = seg_vol.shape
-        pad_h, pad_w = (256 - h) // 2, (256 - w) // 2
-        mask   = np.zeros((256, 256), dtype=np.float32)
-        mask[pad_h:pad_h + h, pad_w:pad_w + w] = (seg_vol > 0).astype(np.float32)
+        mask_np = np.load(seg_path).astype(np.float32)
     else:
-        mask = np.zeros((256, 256), dtype=np.float32)
+        mask_np = np.zeros((1, 256, 256), dtype=np.float32)
 
-    return image_np, label, mask[np.newaxis]          # (4,H,W), int, (1,H,W)
+    return image_np, label, mask_np          # (4,H,W), int, (1,H,W)
 
 
 # ─── Model Loading ────────────────────────────────────────────────────────────
@@ -381,7 +362,6 @@ def main():
 
     device        = torch.device(args.device)
     split_file    = args.split_file    or os.path.join(args.data_path, "preprocessed_split.json")
-    extracted_dir = args.extracted_dir or os.path.join(args.data_path, "extracted_data")
 
     cfg_model, train_args = load_model(args.checkpoint, str(device))
 
@@ -412,7 +392,7 @@ def main():
         entry = val_entries[idx]
         try:
             image_np, label_int, gt_np = load_sample(
-                args.data_path, extracted_dir, entry)   # (4,H,W), int, (1,H,W)
+                args.data_path, entry)                  # (4,H,W), int, (1,H,W)
 
             if label_int == 1 and unhealthy_count >= args.num_unhealthy:
                 continue

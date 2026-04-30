@@ -102,7 +102,7 @@ def train_one_epoch(
             path_sample = path.sample(t=t, x_0=x_0, x_1=samples)
 
             # discrete flow matching loss
-            with torch.cuda.amp.autocast(enabled=use_autocast, dtype=precision_dtype):
+            with torch.amp.autocast('cuda', enabled=use_autocast, dtype=precision_dtype):
                 logits = model(path_sample.x_t, t=t, extra=conditioning)
                 loss = torch.nn.functional.cross_entropy(
                     logits.reshape([-1, 257]), samples.reshape([-1])
@@ -119,7 +119,7 @@ def train_one_epoch(
             x_t = path_sample.x_t
             u_t = path_sample.dx_t
 
-            with torch.cuda.amp.autocast(enabled=use_autocast, dtype=precision_dtype):
+            with torch.amp.autocast('cuda', enabled=use_autocast, dtype=precision_dtype):
                 loss = torch.pow(model(x_t, t, extra=conditioning) - u_t, 2).mean()
 
         loss_value = loss.item()

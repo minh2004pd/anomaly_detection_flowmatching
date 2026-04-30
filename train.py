@@ -235,7 +235,7 @@ def main(args):
     logger.info(f"Optimizer: {optimizer}")
     logger.info(f"Learning-Rate Schedule: {lr_schedule}")
 
-    loss_scaler = NativeScaler()
+    loss_scaler = NativeScaler(enabled=(getattr(args, 'precision', 'fp32') == 'fp16'))
 
     load_model(
         args=args,

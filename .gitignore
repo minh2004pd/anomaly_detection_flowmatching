@@ -1,4 +1,8 @@
 output_dir/
+output_brats*/
+output_cifar*/
+experiments*/
+exp_phase*/
 data/
 *.pyc
 __pycache__/
@@ -6,6 +10,9 @@ __pycache__/
 *.pyd
 *.env
 .env
-.venv
+.venv/
 venv/
 env/
+logs/
+*.log
+snapshots/

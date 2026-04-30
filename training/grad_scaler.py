@@ -31,8 +31,8 @@ def get_grad_norm_(parameters, norm_type: float = 2.0) -> Tensor:
 class NativeScalerWithGradNormCount:
     state_dict_key = "amp_scaler"
 
-    def __init__(self):
-        self._scaler = torch.cuda.amp.GradScaler()
+    def __init__(self, enabled=True):
+        self._scaler = torch.amp.GradScaler('cuda', enabled=enabled)
 
     def __call__(
         self,

@@ -21,7 +21,7 @@ def run_experiment(t, cfg, step, num_samples=20, output_root="experiments"):
     cmd = [
         PYTHON_ENV, "infer_anomaly.py",
         "--checkpoint", "./output_brats_256_dropprob0.1/checkpoint.pth",
-        "--data_path", "./data/brats2021/extracted_data",
+        "--data_path", "./data/brats2021",
         "--split_file", "./data/brats_split.json",
         "--t", str(t),
         "--cfg_scale", str(cfg),
