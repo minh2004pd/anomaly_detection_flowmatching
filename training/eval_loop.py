@@ -184,8 +184,10 @@ def eval_model(
         solver = ODESolver(velocity_model=cfg_scaled_model)
         ode_opts = args.ode_options
 
-    fid_metric = FrechetInceptionDistance(normalize=True).to(
-        device=device, non_blocking=True
+    fid_metric = (
+        FrechetInceptionDistance(normalize=True).to(device=device, non_blocking=True)
+        if args.compute_fid
+        else None
     )
 
     num_synthetic = 0
@@ -199,9 +201,9 @@ def eval_model(
         samples = samples.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
         
-        # Preprocess real samples for FID
-        samples_fid = preprocess_for_fid(samples)
-        fid_metric.update(samples_fid, real=True)
+        if args.compute_fid:
+            samples_fid = preprocess_for_fid(samples)
+            fid_metric.update(samples_fid, real=True)
 
         if num_synthetic < fid_samples:
             cfg_scaled_model.reset_nfe_counter()
@@ -270,9 +272,9 @@ def eval_model(
             if num_synthetic + synthetic_samples.shape[0] > fid_samples:
                 synthetic_samples = synthetic_samples[: fid_samples - num_synthetic]
             
-            # Preprocess fake samples for FID
-            synthetic_fid = preprocess_for_fid(synthetic_samples)
-            fid_metric.update(synthetic_fid, real=False)
+            if args.compute_fid:
+                synthetic_fid = preprocess_for_fid(synthetic_samples)
+                fid_metric.update(synthetic_fid, real=False)
             
             num_synthetic += synthetic_samples.shape[0]
             if not snapshots_saved and args.output_dir:
