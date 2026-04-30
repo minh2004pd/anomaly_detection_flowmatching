@@ -17,7 +17,10 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torchvision.datasets as datasets
-import wandb
+try:
+    import wandb
+except ImportError:
+    wandb = None
 from models.model_configs import instantiate_model
 from train_arg_parser import get_args_parser
 
@@ -246,7 +249,7 @@ def main(args):
         lr_schedule=lr_schedule,
     )
 
-    if getattr(args, "wandb", False) and distributed_mode.is_main_process():
+    if getattr(args, "wandb", False) and wandb is not None and distributed_mode.is_main_process():
         wandb.init(
             project=args.wandb_project,
             name=args.wandb_run_name or Path(args.output_dir).name,
@@ -334,7 +337,7 @@ def main(args):
                 os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8"
             ) as f:
                 f.write(json.dumps(log_stats) + "\n")
-            if getattr(args, "wandb", False):
+            if getattr(args, "wandb", False) and wandb is not None:
                 wandb.log({**log_stats, "epoch": epoch})
 
         if args.test_run or args.eval_only:
