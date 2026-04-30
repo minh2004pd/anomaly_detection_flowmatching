@@ -1,9 +1,12 @@
 #!/bin/bash
 
-PYTHON=/home/k66/miniconda3/envs/flow_matching/bin/python
-DATA_PATH=/mnt/apple/k66/minhdd/data/brats2021
+if [ -d "/workspace/brats2021" ]; then
+    DATA_PATH="${DATA_PATH:-/workspace/brats2021}"
+else
+    DATA_PATH="${DATA_PATH:-$(cd "$(dirname "$0")/.." && pwd)/data/brats2021}"
+fi
 
-$PYTHON infer_anomaly.py \
+uv run python infer_anomaly.py \
   --checkpoint    ./output_brats/checkpoint.pth \
   --data_path     "$DATA_PATH" \
   --t             0.8 \
