@@ -692,7 +692,7 @@ class UNetModel(nn.Module):
             assert (
                 y.shape == x.shape[:1]
             ), f"Labels have shape {y.shape}, which does not match the batch dimension of the input {x.shape}"
-            emb = emb + self.label_emb(y)
+            emb = emb + self.label_emb(y.long())
 
         h = x
         if "concat_conditioning" in extra:
