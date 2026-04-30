@@ -17,6 +17,7 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torchvision.datasets as datasets
+import wandb
 from models.model_configs import instantiate_model
 from train_arg_parser import get_args_parser
 
@@ -245,6 +246,14 @@ def main(args):
         lr_schedule=lr_schedule,
     )
 
+    if getattr(args, "wandb", False) and distributed_mode.is_main_process():
+        wandb.init(
+            project=args.wandb_project,
+            name=args.wandb_run_name or Path(args.output_dir).name,
+            config=vars(args),
+            resume="allow",
+        )
+
     logger.info(f"Start from {args.start_epoch} to {args.epochs} epochs")
     start_time = time.time()
     for epoch in range(args.start_epoch, args.epochs):
@@ -285,6 +294,21 @@ def main(args):
                     loss_scaler=loss_scaler,
                     epoch=epoch,
                 )
+                hf_repo = os.environ.get("HF_REPO", "")
+                hf_token = os.environ.get("HF_TOKEN", "")
+                if hf_repo and hf_token and distributed_mode.is_main_process():
+                    try:
+                        from huggingface_hub import HfApi, login
+                        login(token=hf_token, add_to_git_credential=False)
+                        api = HfApi()
+                        api.create_repo(hf_repo, repo_type="model", exist_ok=True, private=True)
+                        ckpt = os.path.join(args.output_dir, "checkpoint.pth")
+                        if os.path.exists(ckpt):
+                            api.upload_file(path_or_fileobj=ckpt, path_in_repo=f"checkpoint_epoch{epoch+1:04d}.pth", repo_id=hf_repo, repo_type="model")
+                            api.upload_file(path_or_fileobj=ckpt, path_in_repo="checkpoint.pth", repo_id=hf_repo, repo_type="model")
+                            logger.info(f"Uploaded checkpoint epoch {epoch+1} to HF: {hf_repo}")
+                    except Exception as e:
+                        logger.warning(f"HF upload failed: {e}")
             if args.distributed:
                 data_loader_train.sampler.set_epoch(0)
             if distributed_mode.is_main_process():
@@ -310,6 +334,8 @@ def main(args):
                 os.path.join(args.output_dir, "log.txt"), mode="a", encoding="utf-8"
             ) as f:
                 f.write(json.dumps(log_stats) + "\n")
+            if getattr(args, "wandb", False):
+                wandb.log({**log_stats, "epoch": epoch})
 
         if args.test_run or args.eval_only:
             break
