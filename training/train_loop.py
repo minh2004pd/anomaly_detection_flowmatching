@@ -10,7 +10,10 @@ import math
 from typing import Iterable
 
 import torch
-import wandb
+try:
+    import wandb
+except ImportError:
+    wandb = None
 from tqdm import tqdm
 from flow_matching.path import CondOTProbPath, MixtureDiscreteProbPath
 from flow_matching.path.scheduler import PolynomialConvexScheduler
@@ -156,7 +159,7 @@ def train_one_epoch(
             logger.info(
                 f"Epoch {epoch} [{data_iter_step}/{len(data_loader)}]: loss = {step_loss}, lr = {lr}"
             )
-            if getattr(args, "wandb", False) and wandb.run is not None:
+            if getattr(args, "wandb", False) and wandb is not None and wandb.run is not None:
                 global_step = epoch * len(data_loader) + data_iter_step
                 wandb.log({"train/loss_step": step_loss, "train/lr": lr, "step": global_step})
 
