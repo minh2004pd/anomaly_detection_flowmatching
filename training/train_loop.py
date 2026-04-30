@@ -10,6 +10,7 @@ import math
 from typing import Iterable
 
 import torch
+import wandb
 from tqdm import tqdm
 from flow_matching.path import CondOTProbPath, MixtureDiscreteProbPath
 from flow_matching.path.scheduler import PolynomialConvexScheduler
@@ -151,9 +152,13 @@ def train_one_epoch(
 
         lr = optimizer.param_groups[0]["lr"]
         if data_iter_step % PRINT_FREQUENCY == 0:
+            step_loss = float(batch_loss.compute().detach().cpu())
             logger.info(
-                f"Epoch {epoch} [{data_iter_step}/{len(data_loader)}]: loss = {batch_loss.compute()}, lr = {lr}"
+                f"Epoch {epoch} [{data_iter_step}/{len(data_loader)}]: loss = {step_loss}, lr = {lr}"
             )
+            if getattr(args, "wandb", False) and wandb.run is not None:
+                global_step = epoch * len(data_loader) + data_iter_step
+                wandb.log({"train/loss_step": step_loss, "train/lr": lr, "step": global_step})
 
     lr_schedule.step()
     return {"loss": float(epoch_loss.compute().detach().cpu())}

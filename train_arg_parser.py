@@ -109,7 +109,12 @@ def get_args_parser():
         default="./output_dir",
         help="path where to save, empty for no saving",
     )
-    
+
+    # wandb logging
+    parser.add_argument("--wandb", action="store_true", help="Enable Weights & Biases logging")
+    parser.add_argument("--wandb_project", type=str, default="flow-matching", help="W&B project name")
+    parser.add_argument("--wandb_run_name", type=str, default=None, help="W&B run name (defaults to output_dir basename)")
+
     # for simple_shape dataset
     
     parser.add_argument(

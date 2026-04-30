@@ -1,7 +1,7 @@
 Not using distributed mode
-2026-04-28 23:10:29 INFO     job dir: /mnt/apple/k66/minhdd/flow-matching-main
-2026-04-28 23:10:29 INFO     Namespace(batch_size=4,
-epochs=500,
+2026-04-30 10:25:52 INFO     job dir: /mnt/apple/k66/minhdd/flow-matching-main
+2026-04-30 10:25:52 INFO     Namespace(batch_size=4,
+epochs=50,
 accum_iter=8,
 lr=0.0001,
 optimizer_betas=[0.9,
@@ -10,7 +10,7 @@ decay_lr=False,
 class_drop_prob=0.15,
 lr_scheduler='cosine',
 min_lr=1e-06,
-warmup_epochs=3,
+warmup_epochs=0,
 skewed_timesteps=False,
 edm_schedule=False,
 use_ema=True,
@@ -25,7 +25,7 @@ sym=0.0,
 temp=1.0,
 sym_func=False,
 sampling_dtype='float32',
-precision='fp32',
+precision='bf16',
 cfg_scale=3.0,
 fid_samples=50,
 device='cuda',
@@ -36,7 +36,7 @@ eval_only=False,
 eval_frequency=10,
 compute_fid=False,
 save_fid_samples=False,
-num_workers=4,
+num_workers=6,
 pin_mem=True,
 world_size=1,
 local_rank=-1,
@@ -48,15 +48,15 @@ discrete_fm_steps=1024,
 healthy_only=False,
 use_preprocessed=True,
 distributed=False)
-2026-04-28 23:10:29 INFO     Saving args to output_brats/args.json
-2026-04-28 23:10:29 INFO     Initializing Dataset: brats
+2026-04-30 10:25:52 INFO     Saving args to output_brats/args.json
+2026-04-30 10:25:52 INFO     Initializing Dataset: brats
 BraTSPreprocessedDataset [train|healthy_only=False]: 1000 cases — 49000 slices loaded  (split seed=42)
 BraTSPreprocessedDataset [val|healthy_only=False]: 251 cases — 12299 slices loaded  (split seed=42)
-2026-04-28 23:10:29 INFO     <datasets.brats.BraTSPreprocessedDataset object at 0x7f5bae772fe0>
-2026-04-28 23:10:29 INFO     Intializing DataLoader
-2026-04-28 23:10:29 INFO     <torch.utils.data.distributed.DistributedSampler object at 0x7f5bfa333fd0>
-2026-04-28 23:10:29 INFO     Initializing Model
-2026-04-28 23:10:30 INFO     EMA(
+2026-04-30 10:25:52 INFO     <datasets.brats.BraTSPreprocessedDataset object at 0x7f2307d30310>
+2026-04-30 10:25:52 INFO     Intializing DataLoader
+2026-04-30 10:25:52 INFO     <torch.utils.data.distributed.DistributedSampler object at 0x7f235163f0d0>
+2026-04-30 10:25:52 INFO     Initializing Model
+2026-04-30 10:25:52 INFO     EMA(
   (model): UNetModel(in_channels=4, model_channels=64, out_channels=4, num_res_blocks=3, attention_resolutions=[4, 8], dropout=0.1, channel_mult=[1, 2, 4, 4], conv_resample=True, dims=2, num_classes=2, use_checkpoint=True, num_heads=-1, num_head_channels=64, num_heads_upsample=-1, use_scale_shift_norm=True, resblock_updown=True, use_new_attention_order=True, with_fourier_features=False, ignore_time=False, input_projection=True, image_size=-1, _target_='lib.models.gd_unet.UNetModel')
   (shadow_params): ParameterList(
       (0): Parameter containing: [torch.float32 of size 256x64 (cuda:0)]
@@ -558,12 +558,11 @@ BraTSPreprocessedDataset [val|healthy_only=False]: 251 cases — 12299 slices lo
       (496): Parameter containing: [torch.float32 of size 4 (cuda:0)]
   )
 )
-2026-04-28 23:10:30 INFO     Learning rate: 1.00e-04
-2026-04-28 23:10:30 INFO     Accumulate grad iterations: 8
-2026-04-28 23:10:30 INFO     Effective batch size: 32
-2026-04-28 23:10:30 INFO     Using CosineAnnealingLR: T_max=497, eta_min=1e-06
-2026-04-28 23:10:30 INFO     Using warmup for 3 epochs (from 1e-06 to 0.0001)
-2026-04-28 23:10:30 INFO     Optimizer: AdamW (
+2026-04-30 10:25:52 INFO     Learning rate: 1.00e-04
+2026-04-30 10:25:52 INFO     Accumulate grad iterations: 8
+2026-04-30 10:25:52 INFO     Effective batch size: 32
+2026-04-30 10:25:52 INFO     Using CosineAnnealingLR: T_max=50, eta_min=1e-06
+2026-04-30 10:25:52 INFO     Optimizer: AdamW (
 Parameter Group 0
     amsgrad: False
     betas: [0.9, 0.95]
@@ -573,220 +572,28 @@ Parameter Group 0
     foreach: None
     fused: None
     initial_lr: 0.0001
-    lr: 1e-06
+    lr: 0.0001
     maximize: False
     weight_decay: 0.01
 )
-2026-04-28 23:10:30 INFO     Learning-Rate Schedule: <torch.optim.lr_scheduler.SequentialLR object at 0x7f5bade634c0>
-/mnt/apple/k66/minhdd/flow-matching-main/training/grad_scaler.py:35: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
-  self._scaler = torch.cuda.amp.GradScaler()
-2026-04-28 23:10:30 INFO     Start from 0 to 500 epochs
-/mnt/apple/k66/minhdd/flow-matching-main/training/train_loop.py:122: FutureWarning: `torch.cuda.amp.autocast(args...)` is deprecated. Please use `torch.amp.autocast('cuda', args...)` instead.
-  with torch.cuda.amp.autocast(enabled=use_autocast, dtype=precision_dtype):
-/home/k66/miniconda3/envs/flow_matching/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py:632: UserWarning: torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly. In version 2.5 we will raise an exception if use_reentrant is not passed. use_reentrant=False is recommended, but if you need to preserve the current default behavior, you can pass use_reentrant=True. Refer to docs for more details on the differences between the two variants.
+2026-04-30 10:25:52 INFO     Learning-Rate Schedule: <torch.optim.lr_scheduler.CosineAnnealingLR object at 0x7f2307288520>
+2026-04-30 10:25:52 INFO     Start from 0 to 50 epochs
+/mnt/apple/k66/minhdd/flow-matching-main/.venv/lib/python3.10/site-packages/torch/_dynamo/eval_frame.py:745: UserWarning: torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly. In version 2.5 we will raise an exception if use_reentrant is not passed. use_reentrant=False is recommended, but if you need to preserve the current default behavior, you can pass use_reentrant=True. Refer to docs for more details on the differences between the two variants.
   return fn(*args, **kwargs)
-2026-04-28 23:10:43 INFO     Epoch 0 [0/12250]: loss = 1.8609851598739624, lr = 1e-06
-2026-04-28 23:12:12 INFO     Epoch 0 [50/12250]: loss = 1.8418813943862915, lr = 1e-06
-2026-04-28 23:13:58 INFO     Epoch 0 [100/12250]: loss = 1.8295814990997314, lr = 1e-06
-2026-04-28 23:15:46 INFO     Epoch 0 [150/12250]: loss = 1.8282338380813599, lr = 1e-06
-2026-04-28 23:17:34 INFO     Epoch 0 [200/12250]: loss = 1.8113199472427368, lr = 1e-06
-2026-04-28 23:19:23 INFO     Epoch 0 [250/12250]: loss = 1.82705819606781, lr = 1e-06
-2026-04-28 23:21:11 INFO     Epoch 0 [300/12250]: loss = 1.8371856212615967, lr = 1e-06
-2026-04-28 23:23:00 INFO     Epoch 0 [350/12250]: loss = 1.829763650894165, lr = 1e-06
-2026-04-28 23:24:48 INFO     Epoch 0 [400/12250]: loss = 1.8046774864196777, lr = 1e-06
-2026-04-28 23:26:36 INFO     Epoch 0 [450/12250]: loss = 1.8083873987197876, lr = 1e-06
-2026-04-28 23:28:25 INFO     Epoch 0 [500/12250]: loss = 1.8292557001113892, lr = 1e-06
-2026-04-28 23:30:14 INFO     Epoch 0 [550/12250]: loss = 1.8037387132644653, lr = 1e-06
-2026-04-28 23:32:02 INFO     Epoch 0 [600/12250]: loss = 1.867686152458191, lr = 1e-06
-2026-04-28 23:33:50 INFO     Epoch 0 [650/12250]: loss = 1.8209147453308105, lr = 1e-06
-2026-04-28 23:35:38 INFO     Epoch 0 [700/12250]: loss = 1.8171570301055908, lr = 1e-06
-2026-04-28 23:37:27 INFO     Epoch 0 [750/12250]: loss = 1.8100500106811523, lr = 1e-06
-2026-04-28 23:39:15 INFO     Epoch 0 [800/12250]: loss = 1.824073076248169, lr = 1e-06
-2026-04-28 23:41:03 INFO     Epoch 0 [850/12250]: loss = 1.815328598022461, lr = 1e-06
-2026-04-28 23:42:51 INFO     Epoch 0 [900/12250]: loss = 1.8213717937469482, lr = 1e-06
-2026-04-28 23:44:39 INFO     Epoch 0 [950/12250]: loss = 1.8064252138137817, lr = 1e-06
-2026-04-28 23:46:27 INFO     Epoch 0 [1000/12250]: loss = 1.7714533805847168, lr = 1e-06
-2026-04-28 23:48:15 INFO     Epoch 0 [1050/12250]: loss = 1.7914432287216187, lr = 1e-06
-2026-04-28 23:50:03 INFO     Epoch 0 [1100/12250]: loss = 1.7816455364227295, lr = 1e-06
-2026-04-28 23:51:51 INFO     Epoch 0 [1150/12250]: loss = 1.7826019525527954, lr = 1e-06
-2026-04-28 23:53:39 INFO     Epoch 0 [1200/12250]: loss = 1.7907670736312866, lr = 1e-06
-2026-04-28 23:55:26 INFO     Epoch 0 [1250/12250]: loss = 1.7970644235610962, lr = 1e-06
-2026-04-28 23:57:14 INFO     Epoch 0 [1300/12250]: loss = 1.7684406042099, lr = 1e-06
-2026-04-28 23:59:02 INFO     Epoch 0 [1350/12250]: loss = 1.7716643810272217, lr = 1e-06
-2026-04-29 00:00:50 INFO     Epoch 0 [1400/12250]: loss = 1.8104462623596191, lr = 1e-06
-2026-04-29 00:02:38 INFO     Epoch 0 [1450/12250]: loss = 1.7500196695327759, lr = 1e-06
-2026-04-29 00:04:26 INFO     Epoch 0 [1500/12250]: loss = 1.7772985696792603, lr = 1e-06
-2026-04-29 00:06:14 INFO     Epoch 0 [1550/12250]: loss = 1.7899941205978394, lr = 1e-06
-2026-04-29 00:08:02 INFO     Epoch 0 [1600/12250]: loss = 1.7330617904663086, lr = 1e-06
-2026-04-29 00:09:49 INFO     Epoch 0 [1650/12250]: loss = 1.747900366783142, lr = 1e-06
-2026-04-29 00:11:37 INFO     Epoch 0 [1700/12250]: loss = 1.7308673858642578, lr = 1e-06
-2026-04-29 00:13:24 INFO     Epoch 0 [1750/12250]: loss = 1.7592545747756958, lr = 1e-06
-2026-04-29 00:15:11 INFO     Epoch 0 [1800/12250]: loss = 1.7612154483795166, lr = 1e-06
-2026-04-29 00:16:59 INFO     Epoch 0 [1850/12250]: loss = 1.7500663995742798, lr = 1e-06
-2026-04-29 00:18:46 INFO     Epoch 0 [1900/12250]: loss = 1.7589572668075562, lr = 1e-06
-2026-04-29 00:20:33 INFO     Epoch 0 [1950/12250]: loss = 1.7450655698776245, lr = 1e-06
-2026-04-29 00:22:20 INFO     Epoch 0 [2000/12250]: loss = 1.7512295246124268, lr = 1e-06
-2026-04-29 00:24:07 INFO     Epoch 0 [2050/12250]: loss = 1.7685168981552124, lr = 1e-06
-2026-04-29 00:25:54 INFO     Epoch 0 [2100/12250]: loss = 1.7595164775848389, lr = 1e-06
-2026-04-29 00:27:40 INFO     Epoch 0 [2150/12250]: loss = 1.7361797094345093, lr = 1e-06
-2026-04-29 00:29:27 INFO     Epoch 0 [2200/12250]: loss = 1.7187044620513916, lr = 1e-06
-2026-04-29 00:31:14 INFO     Epoch 0 [2250/12250]: loss = 1.7288837432861328, lr = 1e-06
-2026-04-29 00:33:01 INFO     Epoch 0 [2300/12250]: loss = 1.7437658309936523, lr = 1e-06
-2026-04-29 00:34:47 INFO     Epoch 0 [2350/12250]: loss = 1.725002408027649, lr = 1e-06
-2026-04-29 00:36:34 INFO     Epoch 0 [2400/12250]: loss = 1.7075004577636719, lr = 1e-06
-2026-04-29 00:38:21 INFO     Epoch 0 [2450/12250]: loss = 1.7037845849990845, lr = 1e-06
-2026-04-29 00:40:08 INFO     Epoch 0 [2500/12250]: loss = 1.6971194744110107, lr = 1e-06
-2026-04-29 00:41:55 INFO     Epoch 0 [2550/12250]: loss = 1.7105157375335693, lr = 1e-06
-2026-04-29 00:43:42 INFO     Epoch 0 [2600/12250]: loss = 1.6938745975494385, lr = 1e-06
-2026-04-29 00:45:29 INFO     Epoch 0 [2650/12250]: loss = 1.7251638174057007, lr = 1e-06
-2026-04-29 00:47:16 INFO     Epoch 0 [2700/12250]: loss = 1.6987497806549072, lr = 1e-06
-2026-04-29 00:49:02 INFO     Epoch 0 [2750/12250]: loss = 1.7126504182815552, lr = 1e-06
-2026-04-29 00:50:49 INFO     Epoch 0 [2800/12250]: loss = 1.7462043762207031, lr = 1e-06
-2026-04-29 00:52:36 INFO     Epoch 0 [2850/12250]: loss = 1.7067102193832397, lr = 1e-06
-2026-04-29 00:54:22 INFO     Epoch 0 [2900/12250]: loss = 1.6819769144058228, lr = 1e-06
-2026-04-29 00:56:09 INFO     Epoch 0 [2950/12250]: loss = 1.6750398874282837, lr = 1e-06
-2026-04-29 00:57:55 INFO     Epoch 0 [3000/12250]: loss = 1.7529866695404053, lr = 1e-06
-2026-04-29 00:59:41 INFO     Epoch 0 [3050/12250]: loss = 1.681406855583191, lr = 1e-06
-2026-04-29 01:01:28 INFO     Epoch 0 [3100/12250]: loss = 1.668524980545044, lr = 1e-06
-2026-04-29 01:03:14 INFO     Epoch 0 [3150/12250]: loss = 1.676282286643982, lr = 1e-06
-2026-04-29 01:05:02 INFO     Epoch 0 [3200/12250]: loss = 1.6345771551132202, lr = 1e-06
-2026-04-29 01:06:48 INFO     Epoch 0 [3250/12250]: loss = 1.6798733472824097, lr = 1e-06
-2026-04-29 01:08:35 INFO     Epoch 0 [3300/12250]: loss = 1.659855604171753, lr = 1e-06
-2026-04-29 01:10:22 INFO     Epoch 0 [3350/12250]: loss = 1.6489518880844116, lr = 1e-06
-2026-04-29 01:12:08 INFO     Epoch 0 [3400/12250]: loss = 1.7147231101989746, lr = 1e-06
-2026-04-29 01:13:55 INFO     Epoch 0 [3450/12250]: loss = 1.669898509979248, lr = 1e-06
-2026-04-29 01:15:42 INFO     Epoch 0 [3500/12250]: loss = 1.6675777435302734, lr = 1e-06
-2026-04-29 01:17:28 INFO     Epoch 0 [3550/12250]: loss = 1.6697025299072266, lr = 1e-06
-2026-04-29 01:19:14 INFO     Epoch 0 [3600/12250]: loss = 1.6578127145767212, lr = 1e-06
-2026-04-29 01:21:00 INFO     Epoch 0 [3650/12250]: loss = 1.6480141878128052, lr = 1e-06
-2026-04-29 01:22:47 INFO     Epoch 0 [3700/12250]: loss = 1.6373765468597412, lr = 1e-06
-2026-04-29 01:24:33 INFO     Epoch 0 [3750/12250]: loss = 1.6447826623916626, lr = 1e-06
-2026-04-29 01:26:20 INFO     Epoch 0 [3800/12250]: loss = 1.6605443954467773, lr = 1e-06
-2026-04-29 01:28:06 INFO     Epoch 0 [3850/12250]: loss = 1.6472793817520142, lr = 1e-06
-2026-04-29 01:29:52 INFO     Epoch 0 [3900/12250]: loss = 1.624727487564087, lr = 1e-06
-2026-04-29 01:31:38 INFO     Epoch 0 [3950/12250]: loss = 1.6313430070877075, lr = 1e-06
-2026-04-29 01:33:24 INFO     Epoch 0 [4000/12250]: loss = 1.5830203294754028, lr = 1e-06
-2026-04-29 01:35:10 INFO     Epoch 0 [4050/12250]: loss = 1.6240835189819336, lr = 1e-06
-2026-04-29 01:36:56 INFO     Epoch 0 [4100/12250]: loss = 1.6268184185028076, lr = 1e-06
-2026-04-29 01:38:43 INFO     Epoch 0 [4150/12250]: loss = 1.634416937828064, lr = 1e-06
-2026-04-29 01:40:29 INFO     Epoch 0 [4200/12250]: loss = 1.6005287170410156, lr = 1e-06
-2026-04-29 01:42:15 INFO     Epoch 0 [4250/12250]: loss = 1.6265220642089844, lr = 1e-06
-2026-04-29 01:44:01 INFO     Epoch 0 [4300/12250]: loss = 1.6051448583602905, lr = 1e-06
-2026-04-29 01:45:47 INFO     Epoch 0 [4350/12250]: loss = 1.609040379524231, lr = 1e-06
-2026-04-29 01:47:34 INFO     Epoch 0 [4400/12250]: loss = 1.5725337266921997, lr = 1e-06
-2026-04-29 01:49:20 INFO     Epoch 0 [4450/12250]: loss = 1.6146963834762573, lr = 1e-06
-2026-04-29 01:51:06 INFO     Epoch 0 [4500/12250]: loss = 1.6042200326919556, lr = 1e-06
-2026-04-29 01:52:52 INFO     Epoch 0 [4550/12250]: loss = 1.5786590576171875, lr = 1e-06
-2026-04-29 01:54:38 INFO     Epoch 0 [4600/12250]: loss = 1.566413164138794, lr = 1e-06
-2026-04-29 01:56:24 INFO     Epoch 0 [4650/12250]: loss = 1.5987329483032227, lr = 1e-06
-2026-04-29 01:58:09 INFO     Epoch 0 [4700/12250]: loss = 1.6052963733673096, lr = 1e-06
-2026-04-29 01:59:55 INFO     Epoch 0 [4750/12250]: loss = 1.589307188987732, lr = 1e-06
-2026-04-29 02:01:41 INFO     Epoch 0 [4800/12250]: loss = 1.6010534763336182, lr = 1e-06
-2026-04-29 02:03:27 INFO     Epoch 0 [4850/12250]: loss = 1.567527174949646, lr = 1e-06
-2026-04-29 02:05:13 INFO     Epoch 0 [4900/12250]: loss = 1.5785205364227295, lr = 1e-06
-2026-04-29 02:06:58 INFO     Epoch 0 [4950/12250]: loss = 1.5629674196243286, lr = 1e-06
-2026-04-29 02:08:44 INFO     Epoch 0 [5000/12250]: loss = 1.585007905960083, lr = 1e-06
-2026-04-29 02:10:30 INFO     Epoch 0 [5050/12250]: loss = 1.5775431394577026, lr = 1e-06
-2026-04-29 02:12:16 INFO     Epoch 0 [5100/12250]: loss = 1.5539329051971436, lr = 1e-06
-2026-04-29 02:14:02 INFO     Epoch 0 [5150/12250]: loss = 1.5494548082351685, lr = 1e-06
-2026-04-29 02:15:48 INFO     Epoch 0 [5200/12250]: loss = 1.5827831029891968, lr = 1e-06
-2026-04-29 02:17:34 INFO     Epoch 0 [5250/12250]: loss = 1.544329047203064, lr = 1e-06
-2026-04-29 02:19:19 INFO     Epoch 0 [5300/12250]: loss = 1.5580227375030518, lr = 1e-06
-2026-04-29 02:21:05 INFO     Epoch 0 [5350/12250]: loss = 1.547469139099121, lr = 1e-06
-2026-04-29 02:22:50 INFO     Epoch 0 [5400/12250]: loss = 1.55804443359375, lr = 1e-06
-2026-04-29 02:24:36 INFO     Epoch 0 [5450/12250]: loss = 1.5437651872634888, lr = 1e-06
-2026-04-29 02:26:21 INFO     Epoch 0 [5500/12250]: loss = 1.5437467098236084, lr = 1e-06
-2026-04-29 02:28:07 INFO     Epoch 0 [5550/12250]: loss = 1.5357449054718018, lr = 1e-06
-2026-04-29 02:29:53 INFO     Epoch 0 [5600/12250]: loss = 1.519829511642456, lr = 1e-06
-2026-04-29 02:31:38 INFO     Epoch 0 [5650/12250]: loss = 1.5437361001968384, lr = 1e-06
-2026-04-29 02:33:23 INFO     Epoch 0 [5700/12250]: loss = 1.5264638662338257, lr = 1e-06
-2026-04-29 02:35:08 INFO     Epoch 0 [5750/12250]: loss = 1.5241941213607788, lr = 1e-06
-2026-04-29 02:36:54 INFO     Epoch 0 [5800/12250]: loss = 1.5097500085830688, lr = 1e-06
-2026-04-29 02:38:39 INFO     Epoch 0 [5850/12250]: loss = 1.506301760673523, lr = 1e-06
-2026-04-29 02:40:25 INFO     Epoch 0 [5900/12250]: loss = 1.5318697690963745, lr = 1e-06
-2026-04-29 02:42:10 INFO     Epoch 0 [5950/12250]: loss = 1.5106548070907593, lr = 1e-06
-2026-04-29 02:43:55 INFO     Epoch 0 [6000/12250]: loss = 1.551200270652771, lr = 1e-06
-2026-04-29 02:45:40 INFO     Epoch 0 [6050/12250]: loss = 1.5266857147216797, lr = 1e-06
-2026-04-29 02:47:26 INFO     Epoch 0 [6100/12250]: loss = 1.494667649269104, lr = 1e-06
-2026-04-29 02:49:11 INFO     Epoch 0 [6150/12250]: loss = 1.5017234086990356, lr = 1e-06
-2026-04-29 02:50:57 INFO     Epoch 0 [6200/12250]: loss = 1.4995841979980469, lr = 1e-06
-2026-04-29 02:52:42 INFO     Epoch 0 [6250/12250]: loss = 1.4823395013809204, lr = 1e-06
-2026-04-29 02:54:27 INFO     Epoch 0 [6300/12250]: loss = 1.4894297122955322, lr = 1e-06
-2026-04-29 02:56:12 INFO     Epoch 0 [6350/12250]: loss = 1.4931896924972534, lr = 1e-06
-2026-04-29 02:57:58 INFO     Epoch 0 [6400/12250]: loss = 1.48323392868042, lr = 1e-06
-2026-04-29 02:59:43 INFO     Epoch 0 [6450/12250]: loss = 1.4905071258544922, lr = 1e-06
-2026-04-29 03:01:28 INFO     Epoch 0 [6500/12250]: loss = 1.4773029088974, lr = 1e-06
-2026-04-29 03:03:13 INFO     Epoch 0 [6550/12250]: loss = 1.4914923906326294, lr = 1e-06
-2026-04-29 03:04:59 INFO     Epoch 0 [6600/12250]: loss = 1.437509536743164, lr = 1e-06
-2026-04-29 03:06:44 INFO     Epoch 0 [6650/12250]: loss = 1.4733282327651978, lr = 1e-06
-2026-04-29 03:08:29 INFO     Epoch 0 [6700/12250]: loss = 1.4757931232452393, lr = 1e-06
-2026-04-29 03:10:14 INFO     Epoch 0 [6750/12250]: loss = 1.4847394227981567, lr = 1e-06
-2026-04-29 03:11:59 INFO     Epoch 0 [6800/12250]: loss = 1.4360840320587158, lr = 1e-06
-2026-04-29 03:13:44 INFO     Epoch 0 [6850/12250]: loss = 1.4578291177749634, lr = 1e-06
-2026-04-29 03:15:29 INFO     Epoch 0 [6900/12250]: loss = 1.4510936737060547, lr = 1e-06
-2026-04-29 03:17:14 INFO     Epoch 0 [6950/12250]: loss = 1.4552644491195679, lr = 1e-06
-2026-04-29 03:18:59 INFO     Epoch 0 [7000/12250]: loss = 1.4543735980987549, lr = 1e-06
-2026-04-29 03:20:45 INFO     Epoch 0 [7050/12250]: loss = 1.4491642713546753, lr = 1e-06
-2026-04-29 03:22:30 INFO     Epoch 0 [7100/12250]: loss = 1.4403518438339233, lr = 1e-06
-2026-04-29 03:24:16 INFO     Epoch 0 [7150/12250]: loss = 1.4302241802215576, lr = 1e-06
-2026-04-29 03:26:01 INFO     Epoch 0 [7200/12250]: loss = 1.4380249977111816, lr = 1e-06
-2026-04-29 03:27:46 INFO     Epoch 0 [7250/12250]: loss = 1.444313883781433, lr = 1e-06
-2026-04-29 03:29:31 INFO     Epoch 0 [7300/12250]: loss = 1.440948724746704, lr = 1e-06
-2026-04-29 03:31:17 INFO     Epoch 0 [7350/12250]: loss = 1.4421170949935913, lr = 1e-06
-2026-04-29 03:33:02 INFO     Epoch 0 [7400/12250]: loss = 1.4176647663116455, lr = 1e-06
-2026-04-29 03:34:47 INFO     Epoch 0 [7450/12250]: loss = 1.4265714883804321, lr = 1e-06
-2026-04-29 03:36:32 INFO     Epoch 0 [7500/12250]: loss = 1.431649923324585, lr = 1e-06
-2026-04-29 03:38:17 INFO     Epoch 0 [7550/12250]: loss = 1.435561180114746, lr = 1e-06
-2026-04-29 03:40:02 INFO     Epoch 0 [7600/12250]: loss = 1.427060604095459, lr = 1e-06
-2026-04-29 03:41:47 INFO     Epoch 0 [7650/12250]: loss = 1.4158228635787964, lr = 1e-06
-2026-04-29 03:43:32 INFO     Epoch 0 [7700/12250]: loss = 1.4126731157302856, lr = 1e-06
-2026-04-29 03:45:17 INFO     Epoch 0 [7750/12250]: loss = 1.4096356630325317, lr = 1e-06
-2026-04-29 03:47:02 INFO     Epoch 0 [7800/12250]: loss = 1.3964611291885376, lr = 1e-06
-2026-04-29 03:48:47 INFO     Epoch 0 [7850/12250]: loss = 1.4092378616333008, lr = 1e-06
-2026-04-29 03:50:33 INFO     Epoch 0 [7900/12250]: loss = 1.3935837745666504, lr = 1e-06
-2026-04-29 03:52:18 INFO     Epoch 0 [7950/12250]: loss = 1.4122459888458252, lr = 1e-06
-2026-04-29 03:54:03 INFO     Epoch 0 [8000/12250]: loss = 1.4377644062042236, lr = 1e-06
-2026-04-29 03:55:48 INFO     Epoch 0 [8050/12250]: loss = 1.3882116079330444, lr = 1e-06
-2026-04-29 03:57:33 INFO     Epoch 0 [8100/12250]: loss = 1.3959593772888184, lr = 1e-06
-2026-04-29 03:59:18 INFO     Epoch 0 [8150/12250]: loss = 1.4068214893341064, lr = 1e-06
-2026-04-29 04:01:03 INFO     Epoch 0 [8200/12250]: loss = 1.387172818183899, lr = 1e-06
-2026-04-29 04:02:48 INFO     Epoch 0 [8250/12250]: loss = 1.3904176950454712, lr = 1e-06
-2026-04-29 04:04:33 INFO     Epoch 0 [8300/12250]: loss = 1.3904691934585571, lr = 1e-06
-2026-04-29 04:06:18 INFO     Epoch 0 [8350/12250]: loss = 1.3958698511123657, lr = 1e-06
-2026-04-29 04:08:02 INFO     Epoch 0 [8400/12250]: loss = 1.3607972860336304, lr = 1e-06
-2026-04-29 04:09:47 INFO     Epoch 0 [8450/12250]: loss = 1.3908109664916992, lr = 1e-06
-2026-04-29 04:11:32 INFO     Epoch 0 [8500/12250]: loss = 1.37748122215271, lr = 1e-06
-2026-04-29 04:13:16 INFO     Epoch 0 [8550/12250]: loss = 1.3784795999526978, lr = 1e-06
-2026-04-29 04:15:00 INFO     Epoch 0 [8600/12250]: loss = 1.361910343170166, lr = 1e-06
-2026-04-29 04:16:45 INFO     Epoch 0 [8650/12250]: loss = 1.3483247756958008, lr = 1e-06
-2026-04-29 04:18:30 INFO     Epoch 0 [8700/12250]: loss = 1.3577678203582764, lr = 1e-06
-2026-04-29 04:20:15 INFO     Epoch 0 [8750/12250]: loss = 1.368008017539978, lr = 1e-06
-2026-04-29 04:22:00 INFO     Epoch 0 [8800/12250]: loss = 1.3804291486740112, lr = 1e-06
-2026-04-29 04:23:45 INFO     Epoch 0 [8850/12250]: loss = 1.3509507179260254, lr = 1e-06
-2026-04-29 04:25:30 INFO     Epoch 0 [8900/12250]: loss = 1.3577245473861694, lr = 1e-06
-2026-04-29 04:27:14 INFO     Epoch 0 [8950/12250]: loss = 1.363432765007019, lr = 1e-06
-2026-04-29 04:28:58 INFO     Epoch 0 [9000/12250]: loss = 1.3492906093597412, lr = 1e-06
-2026-04-29 04:30:43 INFO     Epoch 0 [9050/12250]: loss = 1.3632255792617798, lr = 1e-06
-2026-04-29 04:32:26 INFO     Epoch 0 [9100/12250]: loss = 1.3487513065338135, lr = 1e-06
-2026-04-29 04:34:10 INFO     Epoch 0 [9150/12250]: loss = 1.352306604385376, lr = 1e-06
-2026-04-29 04:35:53 INFO     Epoch 0 [9200/12250]: loss = 1.3794525861740112, lr = 1e-06
-2026-04-29 04:37:36 INFO     Epoch 0 [9250/12250]: loss = 1.3443413972854614, lr = 1e-06
-2026-04-29 04:39:18 INFO     Epoch 0 [9300/12250]: loss = 1.3279733657836914, lr = 1e-06
-2026-04-29 04:41:01 INFO     Epoch 0 [9350/12250]: loss = 1.3232252597808838, lr = 1e-06
-2026-04-29 04:42:43 INFO     Epoch 0 [9400/12250]: loss = 1.33377206325531, lr = 1e-06
-2026-04-29 04:44:26 INFO     Epoch 0 [9450/12250]: loss = 1.313057780265808, lr = 1e-06
-2026-04-29 04:46:09 INFO     Epoch 0 [9500/12250]: loss = 1.338141918182373, lr = 1e-06
-2026-04-29 04:47:52 INFO     Epoch 0 [9550/12250]: loss = 1.334076166152954, lr = 1e-06
-2026-04-29 04:49:35 INFO     Epoch 0 [9600/12250]: loss = 1.2971150875091553, lr = 1e-06
-2026-04-29 04:51:18 INFO     Epoch 0 [9650/12250]: loss = 1.313402771949768, lr = 1e-06
-2026-04-29 04:53:00 INFO     Epoch 0 [9700/12250]: loss = 1.3329195976257324, lr = 1e-06
-2026-04-29 04:54:43 INFO     Epoch 0 [9750/12250]: loss = 1.3193804025650024, lr = 1e-06
-2026-04-29 04:56:25 INFO     Epoch 0 [9800/12250]: loss = 1.2910243272781372, lr = 1e-06
-2026-04-29 04:58:07 INFO     Epoch 0 [9850/12250]: loss = 1.315195918083191, lr = 1e-06
-2026-04-29 04:59:49 INFO     Epoch 0 [9900/12250]: loss = 1.314058542251587, lr = 1e-06
-2026-04-29 05:01:31 INFO     Epoch 0 [9950/12250]: loss = 1.3119020462036133, lr = 1e-06
-2026-04-29 05:03:13 INFO     Epoch 0 [10000/12250]: loss = 1.2711169719696045, lr = 1e-06
-2026-04-29 05:04:55 INFO     Epoch 0 [10050/12250]: loss = 1.317707896232605, lr = 1e-06
-2026-04-29 05:06:38 INFO     Epoch 0 [10100/12250]: loss = 1.315368413925171, lr = 1e-06
-2026-04-29 05:08:20 INFO     Epoch 0 [10150/12250]: loss = 1.3012866973876953, lr = 1e-06
-2026-04-29 05:10:02 INFO     Epoch 0 [10200/12250]: loss = 1.2701306343078613, lr = 1e-06
+2026-04-30 10:25:56 INFO     Epoch 0 [0/12250]: loss = 1.8609851598739624, lr = 0.0001
+2026-04-30 10:29:08 INFO     Epoch 0 [50/12250]: loss = 1.6295982599258423, lr = 0.0001
+2026-04-30 10:32:33 INFO     Epoch 0 [100/12250]: loss = 1.389557123184204, lr = 0.0001
+2026-04-30 10:35:58 INFO     Epoch 0 [150/12250]: loss = 1.2038251161575317, lr = 0.0001
+2026-04-30 10:39:22 INFO     Epoch 0 [200/12250]: loss = 1.0745242834091187, lr = 0.0001
+2026-04-30 10:42:46 INFO     Epoch 0 [250/12250]: loss = 1.0366480350494385, lr = 0.0001
+2026-04-30 10:46:11 INFO     Epoch 0 [300/12250]: loss = 1.0174509286880493, lr = 0.0001
+2026-04-30 10:49:34 INFO     Epoch 0 [350/12250]: loss = 1.0159550905227661, lr = 0.0001
+2026-04-30 10:52:59 INFO     Epoch 0 [400/12250]: loss = 0.9931446313858032, lr = 0.0001
+2026-04-30 10:56:24 INFO     Epoch 0 [450/12250]: loss = 0.9931357502937317, lr = 0.0001
+2026-04-30 10:59:49 INFO     Epoch 0 [500/12250]: loss = 0.9745704531669617, lr = 0.0001
+2026-04-30 11:03:14 INFO     Epoch 0 [550/12250]: loss = 0.9784649610519409, lr = 0.0001
+2026-04-30 11:06:39 INFO     Epoch 0 [600/12250]: loss = 0.9301283359527588, lr = 0.0001
+2026-04-30 11:10:05 INFO     Epoch 0 [650/12250]: loss = 0.9293901324272156, lr = 0.0001
+2026-04-30 11:13:31 INFO     Epoch 0 [700/12250]: loss = 0.9140877723693848, lr = 0.0001
+2026-04-30 11:16:57 INFO     Epoch 0 [750/12250]: loss = 0.8982784152030945, lr = 0.0001
+2026-04-30 11:20:22 INFO     Epoch 0 [800/12250]: loss = 0.8632951974868774, lr = 0.0001

@@ -29,3 +29,6 @@ scipy
 scikit-learn
 matplotlib
 
+# Experiment tracking
+wandb
+
