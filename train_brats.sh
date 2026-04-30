@@ -20,7 +20,6 @@ uv run python train.py \
   --lr=1e-4 \
   --lr_scheduler=cosine \
   --min_lr=1e-6 \
-  --warmup_epochs=3 \
   --precision=bf16 \
   --class_drop_prob=0.15 \
   --cfg_scale=3.0 \
@@ -32,3 +31,17 @@ uv run python train.py \
   2>&1 | tee "$LOG_DIR/train_brats.log"
 
 echo "Training completed!"
+
+# Upload checkpoint to HuggingFace if HF_REPO is set
+# Usage: HF_REPO=vipghn2003/brats-flow-matching HF_TOKEN=hf_xxx bash train_brats.sh
+if [ -n "$HF_REPO" ]; then
+    echo "Uploading checkpoint to HuggingFace: $HF_REPO ..."
+    uv run python hf_upload.py \
+        --repo "$HF_REPO" \
+        --checkpoint "$OUTPUT_DIR/checkpoint.pth" \
+        --output_dir "$OUTPUT_DIR" \
+        --all \
+        ${HF_TOKEN:+--token "$HF_TOKEN"}
+else
+    echo "Tip: set HF_REPO=username/repo-name to auto-upload checkpoint after training."
+fi
