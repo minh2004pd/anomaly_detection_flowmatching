@@ -34,7 +34,7 @@ uv run python infer_anomaly.py \
   --t             0.8 \
   --step_size     0.02 \
   --cfg_scale     3.0 \
-  --num_unhealthy 50 \
+  --num_unhealthy 20 \
   --num_healthy   20 \
   --output_dir    "$OUTPUT_DIR" \
   --device        cuda
