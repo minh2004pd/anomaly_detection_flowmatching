@@ -57,6 +57,13 @@ def get_args():
     p.add_argument("--output_dir",    type=str,   default="anomaly_results")
     p.add_argument("--device",        type=str,   default="cuda")
     p.add_argument("--seed",          type=int,   default=42)
+    # CFG-Zero* (Fan et al.) — improves CFG by (1) projecting v_uncond onto
+    # v_cond before mixing, and (2) skipping the first K ODE steps where the
+    # learned velocity is most error-prone.
+    p.add_argument("--cfg_zero_star",    action="store_true",
+                   help="Enable CFG-Zero*: optimized scale + zero-init.")
+    p.add_argument("--zero_init_steps",  type=int, default=1,
+                   help="K — number of leading ODE steps to skip (zero-init).")
     return p.parse_args()
 
 
@@ -128,6 +135,44 @@ class _UncondVelocity(nn.Module):
         return self.cfg(x=x, t=t, cfg_scale=0.0, label=dummy_label)
 
 
+class CFGZeroStarModel(nn.Module):
+    """
+    CFG-Zero* (Fan et al.): optimized-scale variant of classifier-free guidance.
+
+        s*       = <v_cond, v_uncond> / (||v_uncond||² + eps)   (per-sample)
+        v_hat    = (1 + w) · v_cond − w · s* · v_uncond
+
+    s* is computed independently per batch element over flattened tensors,
+    then broadcast back so each sample is rescaled by its own optimal scalar.
+    Falls back gracefully to plain CFG if model is unconditional or w=0.
+    """
+    def __init__(self, cfg_model: CFGScaledModel, eps: float = 1e-8):
+        super().__init__()
+        self.cfg = cfg_model
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor, t: torch.Tensor,
+                cfg_scale: float, label: torch.Tensor) -> torch.Tensor:
+        # If guidance is off, just defer to the regular path.
+        if cfg_scale == 0.0:
+            return self.cfg(x=x, t=t, cfg_scale=0.0, label=label)
+
+        v_cond   = self.cfg(x=x, t=t, cfg_scale=0.0, label=label)              # conditional
+        dummy    = torch.zeros(x.shape[0], dtype=torch.long, device=x.device)
+        v_uncond = self.cfg(x=x, t=t, cfg_scale=0.0, label=dummy)              # unconditional
+        # Note: when num_classes is None the wrapper ignores `label`, so v_cond
+        # and v_uncond will coincide and s* = 1 ⇒ identical to plain CFG.
+
+        flat_c = v_cond.reshape(v_cond.shape[0], -1)
+        flat_u = v_uncond.reshape(v_uncond.shape[0], -1)
+        dot     = (flat_c * flat_u).sum(dim=1)
+        sq_norm = (flat_u * flat_u).sum(dim=1)
+        s_star  = dot / (sq_norm + self.eps)                                   # (B,)
+        s_star  = s_star.view(-1, *([1] * (v_cond.ndim - 1)))                  # broadcast
+
+        return (1.0 + cfg_scale) * v_cond - cfg_scale * s_star * v_uncond
+
+
 # ─── ODE encode / decode ──────────────────────────────────────────────────────
 
 @torch.no_grad()
@@ -158,15 +203,37 @@ def decode(cfg_model: CFGScaledModel,
            t_start: float,
            step_size: float,
            device: str,
-           cfg_scale: float) -> torch.Tensor:
+           cfg_scale: float,
+           cfg_zero_star: bool = False,
+           zero_init_steps: int = 0) -> torch.Tensor:
     """
     Forward ODE: latent at t_start → healthy reconstruction (t=1).
     Uses CFG with label=0 (healthy).
     Returns x_recon in [0, 1].
+
+    CFG-Zero* options:
+      - cfg_zero_star: use optimized-scale CFG instead of vanilla.
+      - zero_init_steps (K): skip the first K Euler steps (x stays put).
+        Implemented by advancing the integration start to t_start + K·step_size,
+        which is exactly equivalent to taking K "do nothing" steps.
     """
     x_t = x_t.to(device)
-    solver  = ODESolver(velocity_model=cfg_model)
-    time_grid = torch.tensor([t_start, 1.0], device=device)
+
+    velocity = CFGZeroStarModel(cfg_model) if cfg_zero_star else cfg_model
+    solver   = ODESolver(velocity_model=velocity)
+
+    # Zero-init: advance the start time so the first K steps are no-ops on x_t.
+    # Clamp to leave at least one real step before t=1.
+    t_eff = t_start
+    if cfg_zero_star and zero_init_steps > 0:
+        t_eff = min(t_start + zero_init_steps * step_size, 1.0 - step_size)
+        t_eff = max(t_eff, t_start)   # safety: never go backwards
+
+    if t_eff >= 1.0:
+        # Nothing left to integrate — return x_t directly.
+        return torch.clamp(x_t * 0.5 + 0.5, 0.0, 1.0)
+
+    time_grid = torch.tensor([t_eff, 1.0], device=device)
     healthy_label = torch.zeros(x_t.shape[0], dtype=torch.long, device=device)
     x_recon_scaled = solver.sample(
         x_init=x_t,
@@ -409,7 +476,10 @@ def main():
             x_t    = encode(cfg_model, x_in, args.t, args.step_size, str(device))
 
             # 2. Forward ODE: decode healthy (t_start → t=1)
-            x_recon = decode(cfg_model, x_t, args.t, args.step_size, str(device), args.cfg_scale)
+            x_recon = decode(cfg_model, x_t, args.t, args.step_size, str(device),
+                             args.cfg_scale,
+                             cfg_zero_star=args.cfg_zero_star,
+                             zero_init_steps=args.zero_init_steps)
 
             elapsed = time.time() - t0
 
@@ -469,7 +539,9 @@ def main():
         clean = [v for v in vals if not (isinstance(v, float) and np.isnan(v))]
         return np.mean(clean) if clean else float("nan")
 
-    lines = [f"t={args.t}  step={args.step_size}  cfg_scale={args.cfg_scale}\n"]
+    cfg_tag = (f"  cfg_zero_star=True  zero_init_steps={args.zero_init_steps}"
+               if args.cfg_zero_star else "")
+    lines = [f"t={args.t}  step={args.step_size}  cfg_scale={args.cfg_scale}{cfg_tag}\n"]
 
     if all_uh_metrics:
         lines.append("\n=== Unhealthy (DICE / IOU / AUROC) ===")

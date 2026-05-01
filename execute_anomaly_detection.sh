@@ -2,6 +2,16 @@
 
 set -a && source .env 2>/dev/null; set +a
 
+# --update : enable CFG-Zero* (optimized scale + zero-init) at inference.
+#            Plug-in only — no retraining needed.
+USE_CFG_ZERO_STAR=0
+ZERO_INIT_STEPS="${ZERO_INIT_STEPS:-1}"
+for arg in "$@"; do
+    case "$arg" in
+        --update) USE_CFG_ZERO_STAR=1 ;;
+    esac
+done
+
 if [ -d "/workspace/brats2021" ]; then
     DATA_PATH="${DATA_PATH:-/workspace/brats2021}"
 else
@@ -28,6 +38,12 @@ fi
 echo "Using checkpoint: $CHECKPOINT"
 mkdir -p "$OUTPUT_DIR"
 
+EXTRA_ARGS=()
+if [ "$USE_CFG_ZERO_STAR" -eq 1 ]; then
+    EXTRA_ARGS+=(--cfg_zero_star --zero_init_steps "$ZERO_INIT_STEPS")
+    echo "CFG-Zero* enabled (zero_init_steps=$ZERO_INIT_STEPS)"
+fi
+
 uv run python infer_anomaly.py \
   --checkpoint    "$CHECKPOINT" \
   --data_path     "$DATA_PATH" \
@@ -37,7 +53,8 @@ uv run python infer_anomaly.py \
   --num_unhealthy 20 \
   --num_healthy   20 \
   --output_dir    "$OUTPUT_DIR" \
-  --device        cuda
+  --device        cuda \
+  "${EXTRA_ARGS[@]}"
 
 echo "Anomaly Detection completed!"
 
