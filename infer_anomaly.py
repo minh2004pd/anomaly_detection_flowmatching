@@ -104,7 +104,9 @@ def load_model(checkpoint_path: str, device: str):
         is_discrete=train_args.get("discrete_flow_matching", False),
         use_ema=train_args.get("use_ema", False),
     )
-    ckpt = torch.load(checkpoint_path, map_location="cpu")
+    import argparse
+    torch.serialization.add_safe_globals([argparse.Namespace])
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
     model.load_state_dict(ckpt["model"])
     print(f"Loaded [{arch}] epoch={ckpt.get('epoch', '?')}")
 
