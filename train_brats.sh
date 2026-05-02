@@ -6,7 +6,7 @@ if [ -d "/workspace/brats2021" ]; then
 else
     DATA_PATH="${DATA_PATH:-$(cd "$(dirname "$0")/.." && pwd)/data/brats2021}"
 fi
-OUTPUT_DIR="${OUTPUT_DIR:-./output_brats}"
+OUTPUT_DIR="${OUTPUT_DIR:-./output_brats_perbatch}"
 LOG_DIR="${LOG_DIR:-./logs}"
 
 mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
@@ -43,7 +43,7 @@ uv run python train.py \
   $RESUME_ARG \
   # --wandb \
   # --wandb_project="flow-matching-brats" \
-  2>&1 | tee "$LOG_DIR/train_brats.log"
+  2>&1 | tee "$LOG_DIR/train_brats_perbatch.log"
 
 echo "Training completed!"
 

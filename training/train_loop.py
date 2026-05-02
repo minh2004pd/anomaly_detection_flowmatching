@@ -79,19 +79,20 @@ def train_one_epoch(
         samples = samples.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True).long()
 
-        # Per-sample class dropout: each sample independently drops its label.
-        # This ensures every batch has mixed conditional/unconditional samples,
-        # which is required for CFG at inference to work correctly.
-        # The unconditional token is model.num_classes (padding_idx → zero embedding).
+        # Per-batch class dropout (Meta's original recipe): with probability
+        # class_drop_prob the entire batch is treated as unconditional, otherwise
+        # the full label vector is passed through. Empirically this trains a
+        # cleaner uncond branch on small/imbalanced datasets like BraTS than the
+        # per-sample variant, and matches the upstream flow_matching codebase.
         _inner = model.module if hasattr(model, "module") else model
         if hasattr(_inner, "model"):        # unwrap EMA
             _inner = _inner.model
         _uncond_idx = getattr(_inner, "num_classes", None)
         if _uncond_idx is not None:
-            drop_mask = torch.rand(labels.shape[0], device=device) < args.class_drop_prob
-            dropped_labels = labels.clone()
-            dropped_labels[drop_mask] = _uncond_idx   # padding_idx → zero embedding
-            conditioning = {"label": dropped_labels}
+            if torch.rand(1).item() < args.class_drop_prob:
+                conditioning = {}                       # whole batch → uncond
+            else:
+                conditioning = {"label": labels}
         else:
             conditioning = {}               # unconditional model
 

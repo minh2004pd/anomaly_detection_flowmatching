@@ -71,7 +71,7 @@ The `flow_matching/` package implements the generative modeling primitives:
 - **`EMAModel`** (`ema.py`) — wraps any model to maintain an exponential moving average of weights
 - **`ClassifierModel`** (`classifier.py`) — auxiliary classifier for guided generation
 
-All models accept a continuous timestep `t ∈ [0, 1]` (0 = data, 1 = noise) and an optional class label.
+All models accept a continuous timestep `t ∈ [0, 1]` (0 = noise, 1 = data) and an optional class label.
 
 ### Training Infrastructure (`training/`)
 
@@ -95,7 +95,7 @@ The anomaly detection pipeline (`infer_anomaly.py`) trains a model conditioned o
 
 ## Key Conventions
 
-- **Timestep direction**: `t=0` is clean data, `t=1` is pure noise — opposite of some diffusion paper conventions.
+- **Timestep direction**: `t=0` is pure noise, `t=1` is clean data. The `CondOTScheduler` defines `alpha_t=t, sigma_t=1−t`, so `x_t = (1−t)·noise + t·data` (see `flow_matching/path/affine.py` and `scheduler/scheduler.py`). Sampling integrates from `t=0 → t=1`. In `infer_anomaly.py`, `--t` is the *encode endpoint*: encode runs `t=1 → t_start` (data → noisier), decode runs `t_start → t=1` (noisy → reconstructed). **Smaller `--t` ⇒ closer to pure noise ⇒ stronger erasure of input structure.**
 - **Checkpoint format**: dict with keys `model`, `optimizer`, `lr_scheduler`, `loss_scaler`, `epoch`. Resume with `--resume <path>`.
 - **Discrete models**: use `--discrete_flow_matching`; vocab size is always 257 (256 pixel values + 1 mask token); requires `MixtureDiscreteProbPath` and `DiscreteUNetModel`.
 - **FID computation**: requires `--compute_fid`; uses `torchmetrics[image]` and generates 50k samples against the training set.
