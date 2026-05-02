@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# Load .env so HF_REPO / HF_TOKEN are picked up regardless of which shell
+# starts the script (avoids surprises like an old exported HF_REPO in the
+# parent shell silently overriding the .env).
+ENV_FILE="$(dirname "$0")/.env"
+if [ -f "$ENV_FILE" ]; then
+    set -a; source "$ENV_FILE"; set +a
+fi
+
 # On Vast.ai server data is at /workspace/brats2021; locally at <repo>/../data/brats2021
 if [ -d "/workspace/brats2021" ]; then
     DATA_PATH="${DATA_PATH:-/workspace/brats2021}"
