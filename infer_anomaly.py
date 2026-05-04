@@ -796,16 +796,11 @@ def main():
         means = _running_means()
         post = {}
         if means["uh"]:
-            uh = means["uh"]
-            post[f"UH_dice({live_key})"] = f"{uh['dice']:.3f}"
-            post["iou"]   = f"{uh['iou']:.3f}"
-            post["auroc"] = f"{uh['auroc']:.3f}"
-            post["n_uh"]  = uh["n"]
+            post["dice"]  = f"{means['uh']['dice']:.3f}"
+            post["auroc"] = f"{means['uh']['auroc']:.3f}"
         if means["h"]:
-            h = means["h"]
-            post["H_psnr"] = f"{h['psnr']:.2f}"
-            post["ssim"]   = f"{h['ssim']:.3f}"
-            post["n_h"]    = h["n"]
+            post["psnr"] = f"{means['h']['psnr']:.2f}"
+            post["ssim"] = f"{means['h']['ssim']:.3f}"
         pbar.set_postfix(post, refresh=True)
 
     def _means_str():
