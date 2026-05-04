@@ -763,7 +763,34 @@ def main():
     print(f"Targeting {cap_uh} unhealthy + {cap_h} healthy samples "
           f"(val pool: {n_uh_total} unhealthy, {n_h_total} healthy)")
 
-    pbar = tqdm(total=cap_uh + cap_h)
+    pbar = tqdm(total=cap_uh + cap_h, dynamic_ncols=True)
+    # Pick the row used for the live progress-bar display. Prefer 'best'
+    # (oracle, picks the best modality per sample) when --best is on,
+    # else fall back to 'combined'. This is just for the live postfix —
+    # the final summary still reports every row.
+    live_key = "best" if args.best else "combined"
+
+    def _running_mean(vals):
+        clean = [v for v in vals if not (isinstance(v, float) and np.isnan(v))]
+        return float(np.mean(clean)) if clean else float("nan")
+
+    def _update_postfix():
+        post = {}
+        if all_uh_metrics:
+            d = _running_mean([m[live_key]["dice"]  for m in all_uh_metrics if live_key in m])
+            i = _running_mean([m[live_key]["iou"]   for m in all_uh_metrics if live_key in m])
+            a = _running_mean([m[live_key]["auroc"] for m in all_uh_metrics if live_key in m])
+            post[f"UH_dice({live_key})"] = f"{d:.3f}"
+            post["iou"]   = f"{i:.3f}"
+            post["auroc"] = f"{a:.3f}"
+            post["n_uh"]  = unhealthy_count
+        if all_h_metrics:
+            psnr = _running_mean([m["combined"]["psnr"] for m in all_h_metrics if "combined" in m])
+            ssim = _running_mean([m["combined"]["ssim"] for m in all_h_metrics if "combined" in m])
+            post["H_psnr"] = f"{psnr:.2f}"
+            post["ssim"]   = f"{ssim:.3f}"
+            post["n_h"]    = healthy_count
+        pbar.set_postfix(post, refresh=True)
 
     for raw_idx in order:
         if unhealthy_count >= cap_uh and healthy_count >= cap_h:
@@ -857,9 +884,27 @@ def main():
                 output_dir / f"sample_{idx}_{tag}.png",
                 elapsed=elapsed,
             )
-            tqdm.write(f"[idx={idx:>5}] {tag:9s}  infer_time={elapsed:.2f}s")
+            # Per-sample one-liner: show the *just-computed* metric so the
+            # log file (and stdout) carries a record of each sample, not
+            # only the running mean shown in the progress bar.
+            if label_int == 1:
+                m = mdict.get(live_key, {})
+                tqdm.write(
+                    f"[idx={idx:>5}] {tag:9s}  "
+                    f"{live_key} DICE={m.get('dice', float('nan')):.3f} "
+                    f"IOU={m.get('iou', float('nan')):.3f} "
+                    f"AUROC={m.get('auroc', float('nan')):.3f}  "
+                    f"t={elapsed:.2f}s")
+            else:
+                m = mdict.get("combined", {})
+                tqdm.write(
+                    f"[idx={idx:>5}] {tag:9s}  "
+                    f"PSNR={m.get('psnr', float('nan')):.2f} "
+                    f"SSIM={m.get('ssim', float('nan')):.3f}  "
+                    f"t={elapsed:.2f}s")
             all_times.append(elapsed)
             pbar.update(1)
+            _update_postfix()
 
         except Exception as e:
             import traceback
