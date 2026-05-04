@@ -764,11 +764,9 @@ def main():
           f"(val pool: {n_uh_total} unhealthy, {n_h_total} healthy)")
 
     pbar = tqdm(total=cap_uh + cap_h, dynamic_ncols=True)
-    # Pick the row used for the live progress-bar display. Prefer 'best'
-    # (oracle, picks the best modality per sample) when --best is on,
-    # else fall back to 'combined'. This is just for the live postfix —
-    # the final summary still reports every row.
-    live_key = "best" if args.best else "combined"
+    # Use the 'combined' row (union over T2/FLAIR / etc) for the live display.
+    # The final summary still reports every row including 'best'.
+    live_key = "combined"
 
     def _running_mean(vals):
         clean = [v for v in vals if not (isinstance(v, float) and np.isnan(v))]
@@ -802,25 +800,6 @@ def main():
             post["psnr"] = f"{means['h']['psnr']:.2f}"
             post["ssim"] = f"{means['h']['ssim']:.3f}"
         pbar.set_postfix(post, refresh=True)
-
-    def _means_str():
-        """One-line summary of both pools' running means, for tqdm.write."""
-        means = _running_means()
-        parts = []
-        if means["uh"]:
-            uh = means["uh"]
-            parts.append(
-                f"UH(n={uh['n']}) DICE={uh['dice']:.3f} "
-                f"IOU={uh['iou']:.3f} AUROC={uh['auroc']:.3f}"
-            )
-        else:
-            parts.append("UH(n=0)")
-        if means["h"]:
-            h = means["h"]
-            parts.append(f"H(n={h['n']}) PSNR={h['psnr']:.2f} SSIM={h['ssim']:.3f}")
-        else:
-            parts.append("H(n=0)")
-        return "  |  ".join(parts)
 
     for raw_idx in order:
         if unhealthy_count >= cap_uh and healthy_count >= cap_h:
@@ -914,19 +893,27 @@ def main():
                 output_dir / f"sample_{idx}_{tag}.png",
                 elapsed=elapsed,
             )
-            # Per-sample one-liner: this-sample metric + running mean of
-            # BOTH pools (UH dice/iou/auroc and H psnr/ssim), so even if the
-            # current sample is healthy you still see the running unhealthy
-            # mean and vice versa.
+            # Per-sample one-liner: 'combined' row metric for THIS sample +
+            # running mean for the matching pool (UH or H — not both).
+            means = _running_means()
             if label_int == 1:
-                m = mdict.get(live_key, {})
+                m = mdict.get("combined", {})
+                uh = means["uh"]
+                running = (
+                    f"mean(n={uh['n']}) DICE={uh['dice']:.3f} AUROC={uh['auroc']:.3f}"
+                    if uh else "mean(n=0)"
+                )
                 this_sample = (
-                    f"{live_key} DICE={m.get('dice', float('nan')):.3f} "
-                    f"IOU={m.get('iou', float('nan')):.3f} "
+                    f"DICE={m.get('dice', float('nan')):.3f} "
                     f"AUROC={m.get('auroc', float('nan')):.3f}"
                 )
             else:
                 m = mdict.get("combined", {})
+                h = means["h"]
+                running = (
+                    f"mean(n={h['n']}) PSNR={h['psnr']:.2f} SSIM={h['ssim']:.3f}"
+                    if h else "mean(n=0)"
+                )
                 this_sample = (
                     f"PSNR={m.get('psnr', float('nan')):.2f} "
                     f"SSIM={m.get('ssim', float('nan')):.3f}"
@@ -935,8 +922,7 @@ def main():
             pbar.update(1)
             _update_postfix()
             tqdm.write(
-                f"[idx={idx:>5}] {tag:9s}  {this_sample}  t={elapsed:.2f}s  "
-                f"|| means -> {_means_str()}"
+                f"[idx={idx:>5}] {tag:9s}  {this_sample}  t={elapsed:.2f}s  || {running}"
             )
 
         except Exception as e:
