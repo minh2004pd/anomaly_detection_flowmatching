@@ -774,23 +774,58 @@ def main():
         clean = [v for v in vals if not (isinstance(v, float) and np.isnan(v))]
         return float(np.mean(clean)) if clean else float("nan")
 
-    def _update_postfix():
-        post = {}
+    def _running_means():
+        """Return current running means for both unhealthy and healthy pools."""
+        out = {"uh": None, "h": None}
         if all_uh_metrics:
-            d = _running_mean([m[live_key]["dice"]  for m in all_uh_metrics if live_key in m])
-            i = _running_mean([m[live_key]["iou"]   for m in all_uh_metrics if live_key in m])
-            a = _running_mean([m[live_key]["auroc"] for m in all_uh_metrics if live_key in m])
-            post[f"UH_dice({live_key})"] = f"{d:.3f}"
-            post["iou"]   = f"{i:.3f}"
-            post["auroc"] = f"{a:.3f}"
-            post["n_uh"]  = unhealthy_count
+            out["uh"] = {
+                "dice":  _running_mean([m[live_key]["dice"]  for m in all_uh_metrics if live_key in m]),
+                "iou":   _running_mean([m[live_key]["iou"]   for m in all_uh_metrics if live_key in m]),
+                "auroc": _running_mean([m[live_key]["auroc"] for m in all_uh_metrics if live_key in m]),
+                "n":     unhealthy_count,
+            }
         if all_h_metrics:
-            psnr = _running_mean([m["combined"]["psnr"] for m in all_h_metrics if "combined" in m])
-            ssim = _running_mean([m["combined"]["ssim"] for m in all_h_metrics if "combined" in m])
-            post["H_psnr"] = f"{psnr:.2f}"
-            post["ssim"]   = f"{ssim:.3f}"
-            post["n_h"]    = healthy_count
+            out["h"] = {
+                "psnr": _running_mean([m["combined"]["psnr"] for m in all_h_metrics if "combined" in m]),
+                "ssim": _running_mean([m["combined"]["ssim"] for m in all_h_metrics if "combined" in m]),
+                "n":    healthy_count,
+            }
+        return out
+
+    def _update_postfix():
+        means = _running_means()
+        post = {}
+        if means["uh"]:
+            uh = means["uh"]
+            post[f"UH_dice({live_key})"] = f"{uh['dice']:.3f}"
+            post["iou"]   = f"{uh['iou']:.3f}"
+            post["auroc"] = f"{uh['auroc']:.3f}"
+            post["n_uh"]  = uh["n"]
+        if means["h"]:
+            h = means["h"]
+            post["H_psnr"] = f"{h['psnr']:.2f}"
+            post["ssim"]   = f"{h['ssim']:.3f}"
+            post["n_h"]    = h["n"]
         pbar.set_postfix(post, refresh=True)
+
+    def _means_str():
+        """One-line summary of both pools' running means, for tqdm.write."""
+        means = _running_means()
+        parts = []
+        if means["uh"]:
+            uh = means["uh"]
+            parts.append(
+                f"UH(n={uh['n']}) DICE={uh['dice']:.3f} "
+                f"IOU={uh['iou']:.3f} AUROC={uh['auroc']:.3f}"
+            )
+        else:
+            parts.append("UH(n=0)")
+        if means["h"]:
+            h = means["h"]
+            parts.append(f"H(n={h['n']}) PSNR={h['psnr']:.2f} SSIM={h['ssim']:.3f}")
+        else:
+            parts.append("H(n=0)")
+        return "  |  ".join(parts)
 
     for raw_idx in order:
         if unhealthy_count >= cap_uh and healthy_count >= cap_h:
@@ -884,27 +919,30 @@ def main():
                 output_dir / f"sample_{idx}_{tag}.png",
                 elapsed=elapsed,
             )
-            # Per-sample one-liner: show the *just-computed* metric so the
-            # log file (and stdout) carries a record of each sample, not
-            # only the running mean shown in the progress bar.
+            # Per-sample one-liner: this-sample metric + running mean of
+            # BOTH pools (UH dice/iou/auroc and H psnr/ssim), so even if the
+            # current sample is healthy you still see the running unhealthy
+            # mean and vice versa.
             if label_int == 1:
                 m = mdict.get(live_key, {})
-                tqdm.write(
-                    f"[idx={idx:>5}] {tag:9s}  "
+                this_sample = (
                     f"{live_key} DICE={m.get('dice', float('nan')):.3f} "
                     f"IOU={m.get('iou', float('nan')):.3f} "
-                    f"AUROC={m.get('auroc', float('nan')):.3f}  "
-                    f"t={elapsed:.2f}s")
+                    f"AUROC={m.get('auroc', float('nan')):.3f}"
+                )
             else:
                 m = mdict.get("combined", {})
-                tqdm.write(
-                    f"[idx={idx:>5}] {tag:9s}  "
+                this_sample = (
                     f"PSNR={m.get('psnr', float('nan')):.2f} "
-                    f"SSIM={m.get('ssim', float('nan')):.3f}  "
-                    f"t={elapsed:.2f}s")
+                    f"SSIM={m.get('ssim', float('nan')):.3f}"
+                )
             all_times.append(elapsed)
             pbar.update(1)
             _update_postfix()
+            tqdm.write(
+                f"[idx={idx:>5}] {tag:9s}  {this_sample}  t={elapsed:.2f}s  "
+                f"|| means -> {_means_str()}"
+            )
 
         except Exception as e:
             import traceback
