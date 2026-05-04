@@ -54,7 +54,7 @@ def train_classifier_one_epoch(
         x_t = path_sample.x_t
 
         # 3. Forward pass
-        with torch.cuda.amp.autocast(enabled=use_autocast, dtype=precision_dtype):
+        with torch.amp.autocast("cuda", enabled=use_autocast, dtype=precision_dtype):
             logits = model(x_t, t)
             loss = criterion(logits, labels)
 

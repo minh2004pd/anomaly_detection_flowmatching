@@ -105,16 +105,16 @@ class CFGScaledModel(ModelWrapper):
 
         if is_unconditional or cfg_scale == 0.0:
             # Unconditional model or no CFG: just forward with no label
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 result = self.model(x, t, extra={})
         elif cfg_scale != 0.0:
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 conditional = self.model(x, t, extra={"label": label})
                 condition_free = self.model(x, t, extra={})
             result = (1.0 + cfg_scale) * conditional - cfg_scale * condition_free
         else:
             # Model is fully conditional, no cfg weighting needed
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast("cuda"):
                 result = self.model(x, t, extra={"label": label})
 
         self.nfe_counter += 1
