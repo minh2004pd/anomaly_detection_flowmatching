@@ -109,15 +109,16 @@ from huggingface_hub import HfApi, login
 login(token=os.environ["HF_TOKEN"])
 api = HfApi()
 repo = os.environ["HF_RESULTS_REPO"]
+tag = os.environ["TAG"]
 api.create_repo(repo, repo_type="dataset", exist_ok=True, private=True)
 api.upload_folder(
     folder_path=os.environ["OUTDIR"],
-    path_in_repo=os.environ["TAG"],
+    path_in_repo=tag,
     repo_id=repo,
     repo_type="dataset",
-    commit_message=f"grid run {os.environ[\"TAG\"]}",
+    commit_message="grid run " + tag,
 )
-print(f"  -> https://huggingface.co/datasets/{repo}/tree/main/{os.environ[\"TAG\"]}")
+print("  -> https://huggingface.co/datasets/" + repo + "/tree/main/" + tag)
 ' || echo "[UPL ] upload failed for $tag (continuing)"
 }
 
