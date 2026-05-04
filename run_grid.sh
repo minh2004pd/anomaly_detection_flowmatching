@@ -50,7 +50,13 @@ else
 fi
 
 if [ "$USE_V2" -eq 1 ]; then
-    CKPT_DIR="./output_brats_v2"
+    if [ -n "${V2_CKPT_DIR:-}" ]; then
+        CKPT_DIR="$V2_CKPT_DIR"
+    elif [ -d "./output_brats_perbatch" ]; then
+        CKPT_DIR="./output_brats_perbatch"
+    else
+        CKPT_DIR="./output_brats_v2"
+    fi
     ARCH="bratsv2"
     V2_TAG="_v2"
 else

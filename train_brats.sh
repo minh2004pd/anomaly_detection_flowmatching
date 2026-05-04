@@ -27,7 +27,15 @@ fi
 
 if [ "$USE_V2" -eq 1 ]; then
     DATASET="bratsv2"
-    OUTPUT_DIR="${OUTPUT_DIR:-./output_brats_v2}"
+    # On the server the v2 run lives in output_brats_perbatch/; prefer it
+    # when present so training auto-resumes from the existing checkpoint.
+    if [ -z "${OUTPUT_DIR:-}" ]; then
+        if [ -d "./output_brats_perbatch" ]; then
+            OUTPUT_DIR="./output_brats_perbatch"
+        else
+            OUTPUT_DIR="./output_brats_v2"
+        fi
+    fi
     LOG_NAME="train_brats_v2.log"
 else
     DATASET="brats"

@@ -31,10 +31,12 @@ USE_BEST=1
 USE_HYSTERESIS=0
 USE_ENCODE_Y1=0
 USE_ENCODE_CFG=0
-# --v2 : use the 5-level UNet checkpoint (bratsv2 arch) from
-#        ./output_brats_v2/. Default is the legacy 4-level brats checkpoint
-#        in ./output_brats/. The two checkpoints are NOT interchangeable —
-#        their state_dicts have different shapes.
+# --v2 : use the 5-level UNet checkpoint (bratsv2 arch). Looks for the
+#        checkpoint in ./output_brats_perbatch/ first (server layout),
+#        then falls back to ./output_brats_v2/ (local layout). Override
+#        with V2_CKPT_DIR=... env var if needed. Default is the legacy
+#        4-level brats checkpoint in ./output_brats/. The two checkpoints
+#        are NOT interchangeable — their state_dicts have different shapes.
 USE_V2=0
 ZERO_INIT_STEPS="${ZERO_INIT_STEPS:-0}"
 MIN_COMPONENT_SIZE="${MIN_COMPONENT_SIZE:-100}"
@@ -80,7 +82,13 @@ else
 fi
 
 if [ "$USE_V2" -eq 1 ]; then
-    CKPT_DIR="./output_brats_v2"
+    if [ -n "${V2_CKPT_DIR:-}" ]; then
+        CKPT_DIR="$V2_CKPT_DIR"
+    elif [ -d "./output_brats_perbatch" ]; then
+        CKPT_DIR="./output_brats_perbatch"
+    else
+        CKPT_DIR="./output_brats_v2"
+    fi
     ARCH="bratsv2"
     OUTPUT_SUFFIX="_v2"
 else
