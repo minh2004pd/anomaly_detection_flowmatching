@@ -1,0 +1,215 @@
+#!/bin/bash
+# run_grid.sh — coordinate-descent sweep over (cfg, t, step) for anomaly
+# detection on BraTS. Each phase fixes the trajectory found in the previous
+# phase. All runs share --seed 42 so the same 100 unhealthy + 50 healthy
+# slices are evaluated across configs (enables paired comparison).
+#
+# Locked-in choices (no sweep):
+#   threshold  = otsu
+#   border     = on  (BORDER_EROSION=3, BORDER_OVERLAP_THR=0.6)
+#   combined   = T2,FLAIR
+#   checkpoint = ./output_brats/checkpoint.pth (or ./output_brats_v2/ with --v2)
+#   N          = 100 unhealthy + 50 healthy
+#
+# Pass --v2 anywhere on the CLI to switch to the 5-level UNet checkpoint
+# (bratsv2 arch) in ./output_brats_v2/. Output dirs are tagged with _v2 so
+# v1 and v2 sweeps don't collide on disk.
+#
+# Usage:
+#   bash run_grid.sh 1                # phase 1: cfg sweep at t=0.2, step=0.02
+#   bash run_grid.sh 2 <best_cfg>     # phase 2: t sweep at given cfg, step=0.02
+#   bash run_grid.sh 3 <best_t> <best_cfg>   # phase 3: step sweep at given (t, cfg)
+#   bash run_grid.sh 1 --v2           # same as above but using bratsv2 ckpt
+#
+# After each phase: read summary.txt of all p<N>_* runs, pick the winner,
+# pass it to the next phase. Skip-if-exists logic prevents accidental
+# re-runs.
+
+set -euo pipefail
+
+ENV_FILE="$(dirname "$0")/.env"
+if [ -f "$ENV_FILE" ]; then
+    set -a; source "$ENV_FILE"; set +a
+fi
+
+# Strip --v2 from positional args so PHASE/cfg/t ordering still works
+USE_V2=0
+POSITIONAL=()
+for arg in "$@"; do
+    case "$arg" in
+        --v2) USE_V2=1 ;;
+        *)    POSITIONAL+=("$arg") ;;
+    esac
+done
+set -- "${POSITIONAL[@]:-}"
+
+if [ -d "/workspace/brats2021" ]; then
+    DATA_PATH="${DATA_PATH:-/workspace/brats2021}"
+else
+    DATA_PATH="${DATA_PATH:-$(cd "$(dirname "$0")/.." && pwd)/data/brats2021}"
+fi
+
+if [ "$USE_V2" -eq 1 ]; then
+    CKPT_DIR="./output_brats_v2"
+    ARCH="bratsv2"
+    V2_TAG="_v2"
+else
+    CKPT_DIR="./output_brats"
+    ARCH="brats"
+    V2_TAG=""
+fi
+
+CHECKPOINT=""
+if [ -f "${CKPT_DIR}/checkpoint.pth" ]; then
+    CHECKPOINT="${CKPT_DIR}/checkpoint.pth"
+else
+    CHECKPOINT=$(ls -t ${CKPT_DIR}/checkpoint-*.pth 2>/dev/null | head -1)
+fi
+if [ -z "$CHECKPOINT" ]; then
+    echo "Error: No checkpoint found in ${CKPT_DIR}/" >&2
+    exit 1
+fi
+
+# Sample caps. Pass -1 to evaluate the entire val pool for that class.
+# Defaults match the standard sweep size (paired comparison via fixed seed=42).
+NUM_UNHEALTHY="${NUM_UNHEALTHY:-100}"
+NUM_HEALTHY="${NUM_HEALTHY:-50}"
+
+# HuggingFace upload of grid results. After each completed run, the whole
+# output dir is uploaded as a *single* commit via upload_folder — this
+# matters because per-file uploads on a 5-modality x 5-column visualisation
+# sweep blow past the HF rate limit. Set HF_RESULTS_REPO in .env to enable;
+# leave empty to skip uploads entirely.
+HF_RESULTS_REPO="${HF_RESULTS_REPO:-}"
+
+PHASE="${1:?Usage: bash run_grid.sh <phase 1|2|3> [best_cfg|best_t best_cfg]}"
+
+upload_run() {
+    local outdir=$1 tag=$2
+    if [ -z "$HF_RESULTS_REPO" ] || [ -z "${HF_TOKEN:-}" ]; then
+        echo "[UPL ] skipped (HF_RESULTS_REPO or HF_TOKEN not set)"
+        return 0
+    fi
+    if [ ! -f "$outdir/summary.txt" ]; then
+        echo "[UPL ] skipped — $outdir/summary.txt missing (run failed?)"
+        return 0
+    fi
+    echo "[UPL ] $tag  →  hf://$HF_RESULTS_REPO/$tag"
+    HF_TOKEN="$HF_TOKEN" HF_RESULTS_REPO="$HF_RESULTS_REPO" \
+    OUTDIR="$outdir" TAG="$tag" \
+    uv run python -c '
+import os
+from huggingface_hub import HfApi, login
+login(token=os.environ["HF_TOKEN"])
+api = HfApi()
+repo = os.environ["HF_RESULTS_REPO"]
+api.create_repo(repo, repo_type="dataset", exist_ok=True, private=True)
+api.upload_folder(
+    folder_path=os.environ["OUTDIR"],
+    path_in_repo=os.environ["TAG"],
+    repo_id=repo,
+    repo_type="dataset",
+    commit_message=f"grid run {os.environ[\"TAG\"]}",
+)
+print(f"  -> https://huggingface.co/datasets/{repo}/tree/main/{os.environ[\"TAG\"]}")
+' || echo "[UPL ] upload failed for $tag (continuing)"
+}
+
+run_one() {
+    local t=$1 step=$2 cfg=$3 phase=$4
+    # Tag includes N so runs at different sample sizes don't collide on disk.
+    local n_tag="n${NUM_UNHEALTHY}_${NUM_HEALTHY}"
+    local tag="p${phase}_t${t}_s${step}_cfg${cfg}_${n_tag}${V2_TAG}"
+    local outdir="./anomaly_results_grid_${tag}"
+
+    if [ -f "$outdir/summary.txt" ]; then
+        echo "[SKIP] $tag — summary.txt already exists"
+        upload_run "$outdir" "$tag"
+        return 0
+    fi
+
+    echo "[RUN ] $tag  →  $outdir"
+    mkdir -p "$outdir"
+    uv run python infer_anomaly.py \
+        --checkpoint          "$CHECKPOINT" \
+        --arch                "$ARCH" \
+        --data_path           "$DATA_PATH" \
+        --t                   "$t" \
+        --step_size           "$step" \
+        --cfg_scale           "$cfg" \
+        --num_unhealthy       "$NUM_UNHEALTHY" \
+        --num_healthy         "$NUM_HEALTHY" \
+        --output_dir          "$outdir" \
+        --device              cuda \
+        --seed                42 \
+        --min_component_size  100 \
+        --border_erosion      3 \
+        --border_overlap_thr  0.6 \
+        --combined_modalities T2,FLAIR \
+        --best
+
+    upload_run "$outdir" "$tag"
+}
+
+echo "Sample caps: NUM_UNHEALTHY=$NUM_UNHEALTHY  NUM_HEALTHY=$NUM_HEALTHY  (-1 = full val)"
+echo "Checkpoint : $CHECKPOINT (arch=$ARCH)"
+echo "Data path  : $DATA_PATH"
+if [ -n "$HF_RESULTS_REPO" ]; then
+    echo "HF upload  : $HF_RESULTS_REPO (one upload_folder commit per run)"
+else
+    echo "HF upload  : disabled (set HF_RESULTS_REPO + HF_TOKEN in .env to enable)"
+fi
+echo ""
+
+case "$PHASE" in
+    1)
+        echo "=== PHASE 1: CFG sweep (t=0.2, step=0.02) ==="
+        # cfg=1.0 already covered by Run B (T2+FLAIR). Sweep four points
+        # densely around the suspected peak at cfg=1.0:
+        #   0.5 and 0.7 — search below 1
+        #   1.5 and 2.0 — search above 1 (cfg=2.0 redone with T2+FLAIR for
+        #                                  fair comparison; existing Run C
+        #                                  used 4-mod combined).
+        # Combined with Run B (cfg=1.0) and old Run D (cfg=3.0, 4-mod), we
+        # get six cfg points spanning [0.5, 3.0] for the ablation chart.
+        for cfg in 0.5 0.7 1.5 2.0; do
+            run_one 0.2 0.02 "$cfg" 1
+        done
+        echo ""
+        echo "Phase 1 done. Compare DICE in:"
+        echo "  ./anomaly_results_grid_p1_*"
+        echo "  + existing ./anomaly_results_t_0.2_0.02_cfg_scale_1_new_ckpt_otsu_border_combined_T2_FLAIR (cfg=1.0)"
+        echo "Then run:  bash run_grid.sh 2 <best_cfg>"
+        ;;
+    2)
+        BEST_CFG="${2:?Phase 2 needs the winning cfg from phase 1: bash run_grid.sh 2 <best_cfg>}"
+        echo "=== PHASE 2: t sweep (cfg=${BEST_CFG}, step=0.02) ==="
+        # If BEST_CFG=1.0, t=0.2 and t=0.3 are already covered (runs B and G).
+        # Otherwise t=0.2 and t=0.3 also need to be re-run at the new cfg.
+        for t in 0.10 0.15 0.25; do
+            run_one "$t" 0.02 "$BEST_CFG" 2
+        done
+        if [ "$BEST_CFG" != "1.0" ]; then
+            run_one 0.20 0.02 "$BEST_CFG" 2
+            run_one 0.30 0.02 "$BEST_CFG" 2
+        fi
+        echo ""
+        echo "Phase 2 done. Find best t, then run:  bash run_grid.sh 3 <best_t> ${BEST_CFG}"
+        ;;
+    3)
+        BEST_T="${2:?Phase 3 needs best t and cfg: bash run_grid.sh 3 <best_t> <best_cfg>}"
+        BEST_CFG="${3:?Phase 3 needs best t and cfg: bash run_grid.sh 3 <best_t> <best_cfg>}"
+        echo "=== PHASE 3: step sweep (t=${BEST_T}, cfg=${BEST_CFG}) ==="
+        # step=0.02 already covered by phase 2 winner. Sweep faster steps.
+        for step in 0.04 0.07; do
+            run_one "$BEST_T" "$step" "$BEST_CFG" 3
+        done
+        echo ""
+        echo "Phase 3 done. All sweeps complete."
+        echo "Build the speed-vs-quality table from ./anomaly_results_grid_p3_*"
+        ;;
+    *)
+        echo "Unknown phase: $PHASE  (expected 1, 2, or 3)" >&2
+        exit 1
+        ;;
+esac

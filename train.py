@@ -84,7 +84,7 @@ def main(args):
             download=True,
             transform=transform_train,
         )
-    elif args.dataset == "brats":
+    elif args.dataset in ("brats", "bratsv2"):
         healthy_only = getattr(args, 'healthy_only', False)
         if getattr(args, 'use_preprocessed', False):
             dataset_train = BraTSPreprocessedDataset(
@@ -154,7 +154,7 @@ def main(args):
     # define the model
     logger.info("Initializing Model")
     model_arch = args.dataset
-    if args.dataset == "brats" and getattr(args, 'healthy_only', False):
+    if args.dataset in ("brats", "bratsv2") and getattr(args, 'healthy_only', False):
         model_arch = "brats_healthy"
         logger.info("Using brats_healthy (unconditional) architecture for healthy-only training.")
     

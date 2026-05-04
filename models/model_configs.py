@@ -107,6 +107,24 @@ MODEL_CONFIGS = {
         "model_channels": 64,  # Increased capacity slightly for MRI complexity
         "out_channels": 4,
         "num_res_blocks": 3,
+        "attention_resolutions": [4, 8],
+        "dropout": 0.1,
+        "channel_mult": [1, 2, 4, 4], # Deeper net
+        "num_classes": 2, # Healthy vs Diseased
+        "use_checkpoint": True,
+        "num_heads": -1,
+        "num_head_channels": 64,
+        "num_heads_upsample": -1,
+        "use_scale_shift_norm": True,
+        "resblock_updown": True,
+        "use_new_attention_order": True,
+        "with_fourier_features": False,
+    },
+    "bratsv2": {
+        "in_channels": 4,
+        "model_channels": 64,  # Increased capacity slightly for MRI complexity
+        "out_channels": 4,
+        "num_res_blocks": 3,
         # Attention at 4x, 8x, 16x downsample (i.e. 64x64, 32x32, 16x16).
         # Bottleneck (16x16) attention lets every spatial token see the whole
         # field — important for large peripheral tumours that need global

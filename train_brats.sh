@@ -8,13 +8,32 @@ if [ -f "$ENV_FILE" ]; then
     set -a; source "$ENV_FILE"; set +a
 fi
 
+# --v2 : train the 5-level UNet (bratsv2 arch) instead of the legacy 4-level
+#        brats arch. Output dir defaults to ./output_brats_v2/ so the two
+#        runs don't collide. Pass --v2 anywhere on the CLI.
+USE_V2=0
+for arg in "$@"; do
+    case "$arg" in
+        --v2) USE_V2=1 ;;
+    esac
+done
+
 # On Vast.ai server data is at /workspace/brats2021; locally at <repo>/../data/brats2021
 if [ -d "/workspace/brats2021" ]; then
     DATA_PATH="${DATA_PATH:-/workspace/brats2021}"
 else
     DATA_PATH="${DATA_PATH:-$(cd "$(dirname "$0")/.." && pwd)/data/brats2021}"
 fi
-OUTPUT_DIR="${OUTPUT_DIR:-./output_brats_perbatch}"
+
+if [ "$USE_V2" -eq 1 ]; then
+    DATASET="bratsv2"
+    OUTPUT_DIR="${OUTPUT_DIR:-./output_brats_v2}"
+    LOG_NAME="train_brats_v2.log"
+else
+    DATASET="brats"
+    OUTPUT_DIR="${OUTPUT_DIR:-./output_brats_perbatch}"
+    LOG_NAME="train_brats_perbatch.log"
+fi
 LOG_DIR="${LOG_DIR:-./logs}"
 
 mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
@@ -30,8 +49,9 @@ fi
 # use_preprocessed loads from .npy slices with auto 80-20 case-level split (seed=42)
 # Gradient checkpointing is enabled via model_configs.py ("brats" config has use_checkpoint=True)
 set -o pipefail
+echo "Training arch=$DATASET into $OUTPUT_DIR"
 uv run python train.py \
-  --dataset=brats \
+  --dataset="$DATASET" \
   --data_path="$DATA_PATH" \
   --use_preprocessed \
   --image_size=256 \
@@ -51,7 +71,7 @@ uv run python train.py \
   $RESUME_ARG \
   # --wandb \
   # --wandb_project="flow-matching-brats" \
-  2>&1 | tee "$LOG_DIR/train_brats_perbatch.log"
+  2>&1 | tee "$LOG_DIR/$LOG_NAME"
 
 echo "Training completed!"
 
