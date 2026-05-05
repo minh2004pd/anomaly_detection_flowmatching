@@ -125,8 +125,12 @@ print("  -> https://huggingface.co/datasets/" + repo + "/tree/main/" + tag)
 run_one() {
     local t=$1 step=$2 cfg=$3 phase=$4
     # Tag includes N so runs at different sample sizes don't collide on disk.
+    # RUN_TAG (env var) lets you append a free-form suffix — use it when
+    # rerunning the same hyperparams against a new checkpoint, e.g.
+    #   RUN_TAG=ckpt_e25 bash run_grid.sh 1 --v2
     local n_tag="n${NUM_UNHEALTHY}_${NUM_HEALTHY}"
-    local tag="p${phase}_t${t}_s${step}_cfg${cfg}_${n_tag}${V2_TAG}"
+    local run_suffix="${RUN_TAG:+_${RUN_TAG}}"
+    local tag="p${phase}_t${t}_s${step}_cfg${cfg}_${n_tag}${V2_TAG}${run_suffix}"
     local outdir="./anomaly_results_grid_${tag}"
 
     if [ -f "$outdir/summary.txt" ]; then
@@ -160,6 +164,7 @@ run_one() {
 
 echo "Sample caps: NUM_UNHEALTHY=$NUM_UNHEALTHY  NUM_HEALTHY=$NUM_HEALTHY  (-1 = full val)"
 echo "Checkpoint : $CHECKPOINT (arch=$ARCH)"
+[ -n "${RUN_TAG:-}" ] && echo "Run tag    : $RUN_TAG (output dirs suffixed with _$RUN_TAG)"
 echo "Data path  : $DATA_PATH"
 if [ -n "$HF_RESULTS_REPO" ]; then
     echo "HF upload  : $HF_RESULTS_REPO (one upload_folder commit per run)"
