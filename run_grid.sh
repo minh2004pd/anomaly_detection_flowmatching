@@ -66,7 +66,16 @@ else
 fi
 
 CHECKPOINT=""
-if [ -f "${CKPT_DIR}/checkpoint.pth" ]; then
+# EPOCH=N pins to ${CKPT_DIR}/checkpoint-N.pth and auto-suffixes output
+# dirs with _ckpt_eN so different epochs don't clobber each other.
+if [ -n "${EPOCH:-}" ]; then
+    CHECKPOINT="${CKPT_DIR}/checkpoint-${EPOCH}.pth"
+    if [ ! -f "$CHECKPOINT" ]; then
+        echo "Error: EPOCH=$EPOCH but $CHECKPOINT not found" >&2
+        exit 1
+    fi
+    RUN_TAG="${RUN_TAG:-ckpt_e${EPOCH}}"
+elif [ -f "${CKPT_DIR}/checkpoint.pth" ]; then
     CHECKPOINT="${CKPT_DIR}/checkpoint.pth"
 else
     CHECKPOINT=$(ls -t ${CKPT_DIR}/checkpoint-*.pth 2>/dev/null | head -1)
