@@ -97,17 +97,28 @@ else
     OUTPUT_SUFFIX=""
 fi
 
-if [ "$USE_CFG_ZERO_STAR" -eq 1 ]; then
-    OUTPUT_DIR="${OUTPUT_DIR:-./anomaly_results_update_t_0.3_0.02_cfg_scale_1_new_ckpt_otsu_border_combined_T2_FLAIR${OUTPUT_SUFFIX}}"
-else
-    OUTPUT_DIR="${OUTPUT_DIR:-./anomaly_results_t_0.3_0.02_cfg_scale_1_new_ckpt_otsu_border_combined_T2_FLAIR${OUTPUT_SUFFIX}}"
-fi
+# Inference hyperparams. Defaults are the winners from the epoch-11 grid
+# sweep (see grid_sweep_results_ckpt_e11.md): t=0.2, cfg=0.5, step=0.02.
+T_VAL="${T_VAL:-0.2}"
+STEP_SIZE="${STEP_SIZE:-0.02}"
+CFG_SCALE="${CFG_SCALE:-0.5}"
+
 HF_REPO="${HF_REPO:-}"
 HF_TOKEN="${HF_TOKEN:-}"
 
-# Auto-find latest checkpoint
+# Checkpoint selection. EPOCH=N pins to ${CKPT_DIR}/checkpoint-N.pth and
+# tags the output dir with _ckpt_eN; otherwise prefer checkpoint.pth, then
+# fall back to the most recently modified checkpoint-*.pth.
 CHECKPOINT=""
-if [ -f "${CKPT_DIR}/checkpoint.pth" ]; then
+CKPT_TAG=""
+if [ -n "${EPOCH:-}" ]; then
+    CHECKPOINT="${CKPT_DIR}/checkpoint-${EPOCH}.pth"
+    if [ ! -f "$CHECKPOINT" ]; then
+        echo "Error: EPOCH=$EPOCH but $CHECKPOINT not found"
+        exit 1
+    fi
+    CKPT_TAG="_ckpt_e${EPOCH}"
+elif [ -f "${CKPT_DIR}/checkpoint.pth" ]; then
     CHECKPOINT="${CKPT_DIR}/checkpoint.pth"
 else
     CHECKPOINT=$(ls -t ${CKPT_DIR}/checkpoint-*.pth 2>/dev/null | head -1)
@@ -116,6 +127,12 @@ fi
 if [ -z "$CHECKPOINT" ]; then
     echo "Error: No checkpoint found in ${CKPT_DIR}/"
     exit 1
+fi
+
+if [ "$USE_CFG_ZERO_STAR" -eq 1 ]; then
+    OUTPUT_DIR="${OUTPUT_DIR:-./anomaly_results_update_t_${T_VAL}_${STEP_SIZE}_cfg_scale_${CFG_SCALE}_new_ckpt_otsu_border_combined_T2_FLAIR${OUTPUT_SUFFIX}${CKPT_TAG}}"
+else
+    OUTPUT_DIR="${OUTPUT_DIR:-./anomaly_results_t_${T_VAL}_${STEP_SIZE}_cfg_scale_${CFG_SCALE}_new_ckpt_otsu_border_combined_T2_FLAIR${OUTPUT_SUFFIX}${CKPT_TAG}}"
 fi
 
 echo "Using checkpoint: $CHECKPOINT (arch=$ARCH)"
@@ -147,9 +164,9 @@ uv run python infer_anomaly.py \
   --checkpoint          "$CHECKPOINT" \
   --arch                "$ARCH" \
   --data_path           "$DATA_PATH" \
-  --t                   0.3 \
-  --step_size           0.02 \
-  --cfg_scale           1.0 \
+  --t                   "$T_VAL" \
+  --step_size           "$STEP_SIZE" \
+  --cfg_scale           "$CFG_SCALE" \
   --num_unhealthy       "$NUM_UNHEALTHY" \
   --num_healthy         "$NUM_HEALTHY" \
   --output_dir          "$OUTPUT_DIR" \
