@@ -66,9 +66,21 @@ else
 fi
 
 CHECKPOINT=""
+# CHECKPOINT_OVERRIDE lets you point directly at any .pth file regardless of
+# naming convention (e.g. checkpoint_epoch0011.pth). Takes precedence over
+# all other checkpoint-discovery logic. RUN_TAG is auto-derived from the
+# filename stem if not already set.
+if [ -n "${CHECKPOINT_OVERRIDE:-}" ]; then
+    CHECKPOINT="$CHECKPOINT_OVERRIDE"
+    if [ ! -f "$CHECKPOINT" ]; then
+        echo "Error: CHECKPOINT_OVERRIDE=$CHECKPOINT not found" >&2
+        exit 1
+    fi
+    _stem=$(basename "$CHECKPOINT" .pth)
+    RUN_TAG="${RUN_TAG:-${_stem}}"
 # EPOCH=N pins to ${CKPT_DIR}/checkpoint-N.pth and auto-suffixes output
 # dirs with _ckpt_eN so different epochs don't clobber each other.
-if [ -n "${EPOCH:-}" ]; then
+elif [ -n "${EPOCH:-}" ]; then
     CHECKPOINT="${CKPT_DIR}/checkpoint-${EPOCH}.pth"
     if [ ! -f "$CHECKPOINT" ]; then
         echo "Error: EPOCH=$EPOCH but $CHECKPOINT not found" >&2
@@ -97,7 +109,7 @@ NUM_HEALTHY="${NUM_HEALTHY:-50}"
 # leave empty to skip uploads entirely.
 HF_RESULTS_REPO="${HF_RESULTS_REPO:-}"
 
-PHASE="${1:?Usage: bash run_grid.sh <phase 1|2|3> [best_cfg|best_t best_cfg]}"
+PHASE="${1:?Usage: bash run_grid.sh <phase 1|2|3|auto> [best_cfg|best_t best_cfg]}"
 
 upload_run() {
     local outdir=$1 tag=$2
@@ -154,6 +166,8 @@ run_one() {
         --checkpoint          "$CHECKPOINT" \
         --arch                "$ARCH" \
         --data_path           "$DATA_PATH" \
+        --split_file          "${SPLIT_FILE:-${DATA_PATH}/preprocessed_split.json}" \
+        --split               "${SPLIT:-val}" \
         --t                   "$t" \
         --step_size           "$step" \
         --cfg_scale           "$cfg" \
@@ -166,6 +180,7 @@ run_one() {
         --border_erosion      3 \
         --border_overlap_thr  0.6 \
         --combined_modalities T2,FLAIR \
+        --no_images \
         --best
 
     upload_run "$outdir" "$tag"
@@ -229,8 +244,87 @@ case "$PHASE" in
         echo "Phase 3 done. All sweeps complete."
         echo "Build the speed-vs-quality table from ./anomaly_results_grid_p3_*"
         ;;
+    auto)
+        # ── Chạy cả 3 phase liên tiếp, tự động chọn winner sau mỗi phase ──
+        # Metric dùng để chọn winner: DICE của modality 'combined'.
+        # Đọc từ summary.txt dòng "  combined    DICE=X.XXXX"
+        pick_best_cfg() {
+            local best_cfg="" best_dice=-1
+            local n_tag="n${NUM_UNHEALTHY}_${NUM_HEALTHY}"
+            for cfg in 0.5 0.7 1.5 2.0; do
+                local run_suffix="${RUN_TAG:+_${RUN_TAG}}"
+                local tag="p1_t0.2_s0.02_cfg${cfg}_${n_tag}${V2_TAG}${run_suffix}"
+                local summary="./anomaly_results_grid_${tag}/summary.txt"
+                [ -f "$summary" ] || continue
+                local dice
+                dice=$(grep "^  combined " "$summary" | grep -oP 'DICE=\K[0-9.]+' | head -1)
+                [ -z "$dice" ] && continue
+                if awk "BEGIN{exit !($dice > $best_dice)}"; then
+                    best_dice=$dice; best_cfg=$cfg
+                fi
+            done
+            echo "$best_cfg"
+        }
+
+        pick_best_t() {
+            local best_cfg=$1 best_t="" best_dice=-1
+            local n_tag="n${NUM_UNHEALTHY}_${NUM_HEALTHY}"
+            for t in 0.10 0.15 0.20 0.25 0.30; do
+                local run_suffix="${RUN_TAG:+_${RUN_TAG}}"
+                local tag="p2_t${t}_s0.02_cfg${best_cfg}_${n_tag}${V2_TAG}${run_suffix}"
+                local summary="./anomaly_results_grid_${tag}/summary.txt"
+                [ -f "$summary" ] || continue
+                local dice
+                dice=$(grep "^  combined " "$summary" | grep -oP 'DICE=\K[0-9.]+' | head -1)
+                [ -z "$dice" ] && continue
+                if awk "BEGIN{exit !($dice > $best_dice)}"; then
+                    best_dice=$dice; best_t=$t
+                fi
+            done
+            echo "$best_t"
+        }
+
+        echo "=== AUTO: PHASE 1 — CFG sweep (t=0.2, step=0.02) ==="
+        for cfg in 0.5 0.7 1.5 2.0; do
+            run_one 0.2 0.02 "$cfg" 1
+        done
+
+        BEST_CFG=$(pick_best_cfg)
+        if [ -z "$BEST_CFG" ]; then
+            echo "Error: không tìm được best_cfg từ phase 1 — kiểm tra summary.txt" >&2
+            exit 1
+        fi
+        echo ""
+        echo ">>> Phase 1 winner: cfg=${BEST_CFG}"
+
+        echo ""
+        echo "=== AUTO: PHASE 2 — t sweep (cfg=${BEST_CFG}, step=0.02) ==="
+        for t in 0.10 0.15 0.25; do
+            run_one "$t" 0.02 "$BEST_CFG" 2
+        done
+        if [ "$BEST_CFG" != "1.0" ]; then
+            run_one 0.20 0.02 "$BEST_CFG" 2
+            run_one 0.30 0.02 "$BEST_CFG" 2
+        fi
+
+        BEST_T=$(pick_best_t "$BEST_CFG")
+        if [ -z "$BEST_T" ]; then
+            echo "Error: không tìm được best_t từ phase 2 — kiểm tra summary.txt" >&2
+            exit 1
+        fi
+        echo ""
+        echo ">>> Phase 2 winner: t=${BEST_T}"
+
+        echo ""
+        echo "=== AUTO: PHASE 3 — step sweep (t=${BEST_T}, cfg=${BEST_CFG}) ==="
+        for step in 0.04 0.07; do
+            run_one "$BEST_T" "$step" "$BEST_CFG" 3
+        done
+        echo ""
+        echo "=== AUTO DONE: best cfg=${BEST_CFG}  t=${BEST_T}  (step=0.02 vs 0.04 vs 0.07 — xem p3_*) ==="
+        ;;
     *)
-        echo "Unknown phase: $PHASE  (expected 1, 2, or 3)" >&2
+        echo "Unknown phase: $PHASE  (expected 1, 2, 3, or auto)" >&2
         exit 1
         ;;
 esac

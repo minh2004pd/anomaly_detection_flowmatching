@@ -109,9 +109,14 @@ HF_TOKEN="${HF_TOKEN:-}"
 # Checkpoint selection. EPOCH=N pins to ${CKPT_DIR}/checkpoint-N.pth and
 # tags the output dir with _ckpt_eN; otherwise prefer checkpoint.pth, then
 # fall back to the most recently modified checkpoint-*.pth.
-CHECKPOINT=""
+CHECKPOINT="${CHECKPOINT_OVERRIDE:-}"
 CKPT_TAG=""
-if [ -n "${EPOCH:-}" ]; then
+if [ -n "$CHECKPOINT_OVERRIDE" ]; then
+    if [ ! -f "$CHECKPOINT_OVERRIDE" ]; then
+        echo "Error: CHECKPOINT_OVERRIDE=$CHECKPOINT_OVERRIDE not found"
+        exit 1
+    fi
+elif [ -n "${EPOCH:-}" ]; then
     CHECKPOINT="${CKPT_DIR}/checkpoint-${EPOCH}.pth"
     if [ ! -f "$CHECKPOINT" ]; then
         echo "Error: EPOCH=$EPOCH but $CHECKPOINT not found"
@@ -160,10 +165,16 @@ if [ "$USE_ENCODE_CFG" -eq 1 ]; then
     echo "Reverse CFG encoding enabled (encode_cfg_scale=$ENCODE_CFG_SCALE, label=0)"
 fi
 
+SINGLE_IDX="${SINGLE_IDX:-}"
+SPLIT_FILE="${SPLIT_FILE:-}"
+NO_IMAGES="${NO_IMAGES:-0}"
+[ "$NO_IMAGES" -eq 1 ] && EXTRA_ARGS+=(--no_images)
+
 uv run python infer_anomaly.py \
   --checkpoint          "$CHECKPOINT" \
   --arch                "$ARCH" \
   --data_path           "$DATA_PATH" \
+  ${SPLIT_FILE:+--split_file "$SPLIT_FILE"} \
   --t                   "$T_VAL" \
   --step_size           "$STEP_SIZE" \
   --cfg_scale           "$CFG_SCALE" \
@@ -175,6 +186,7 @@ uv run python infer_anomaly.py \
   --border_erosion      "$BORDER_EROSION" \
   --border_overlap_thr  "$BORDER_OVERLAP_THR" \
   --combined_modalities "$COMBINED_MODALITIES" \
+  ${SINGLE_IDX:+--target_idx "$SINGLE_IDX" --save_clean_idx "$SINGLE_IDX" --clean_base_dir "${CLEAN_BASE_DIR:-/mnt/apple/k66/minhdd/clean_samples/fm}"} \
   "${EXTRA_ARGS[@]}"
 
 echo "Anomaly Detection completed!"

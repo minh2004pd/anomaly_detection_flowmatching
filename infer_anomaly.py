@@ -118,6 +118,21 @@ def get_args():
                    help="Comma-separated subset of {T1,T1ce,T2,FLAIR} used to "
                         "build the 'combined' mask (union). Per-modality masks "
                         "are still computed for all 4. Default: all four.")
+    p.add_argument("--save_clean_idx",  type=int, default=-1,
+                   help="Val-set index of a single sample for which to save "
+                        "individual clean images (no axes / text / labels) into "
+                        "<output_dir>/clean/<idx>/fm_*.png.  -1 disables (default).")
+    p.add_argument("--target_idx",      type=str, default=None,
+                   help="Comma-separated list of val-set indices to evaluate. "
+                        "If set, ignores --num_unhealthy/--num_healthy.")
+    p.add_argument("--split",           type=str, default="val", choices=["val", "test"],
+                   help="Which split to evaluate on: 'val' (default) or 'test'.")
+    p.add_argument("--clean_base_dir",  type=str, default=None,
+                   help="Base directory to save clean images. If not set, "
+                        "saves to <output_dir>/clean/")
+    p.add_argument("--no_images",       action="store_true",
+                   help="Skip all image saving (visualizations + clean images). "
+                        "Faster when only metrics/CSV are needed.")
     return p.parse_args()
 
 
@@ -215,7 +230,7 @@ class _CondVelocity(nn.Module):
         t_batch = torch.zeros(x.shape[0], device=x.device) + t
         label   = torch.full((x.shape[0],), self.label_value,
                              dtype=torch.long, device=x.device)
-        with torch.amp.autocast("cuda"):
+        with torch.cuda.amp.autocast():
             out = self.cfg.model(x, t_batch, extra={"label": label})
         return out.to(dtype=torch.float32)
 
@@ -244,7 +259,7 @@ class _CFGCondVelocity(nn.Module):
         t_batch = torch.zeros(x.shape[0], device=x.device) + t
         label   = torch.full((x.shape[0],), self.label_value,
                              dtype=torch.long, device=x.device)
-        with torch.amp.autocast("cuda"):
+        with torch.cuda.amp.autocast():
             v_cond   = self.cfg.model(x, t_batch, extra={"label": label})
             v_uncond = self.cfg.model(x, t_batch, extra={})
         v_cond   = v_cond.to(dtype=torch.float32)
@@ -716,14 +731,68 @@ def visualize_sample(input_np, recon_np, diff_maps, binary_masks,
     plt.close(fig)
 
 
+def save_clean_images(input_np, recon_np, diff_maps, binary_masks,
+                      combined_diff, combined_binary, gt_mask_np,
+                      clean_dir: Path) -> None:
+    """
+    Save individual images for a single sample with NO axes, text, or labels.
+    Each image is written pixel-exact (native array size) via cv2.imwrite.
+
+    Files written (prefix = fm_):
+      fm_original_{T1,T1ce,T2,FLAIR}.png
+      fm_recon_{T1,T1ce,T2,FLAIR}.png
+      fm_anomaly_map_{T1,T1ce,T2,FLAIR}.png  (jet colormap)
+      fm_anomaly_map_combined.png              (jet)
+      fm_binary_mask_{T1,T1ce,T2,FLAIR}.png
+      fm_binary_mask_combined.png
+      fm_gt_mask.png
+    """
+    clean_dir.mkdir(parents=True, exist_ok=True)
+    gt_2d = gt_mask_np.squeeze(0).astype(np.float32)
+
+    def _imsave(arr, path, cmap, vmin=None, vmax=None):
+        lo = float(arr.min()) if vmin is None else vmin
+        hi = float(arr.max()) if vmax is None else vmax
+        if hi <= lo:
+            hi = lo + 1e-6
+        norm = np.clip((arr - lo) / (hi - lo), 0, 1)
+        if cmap == "gray":
+            img_u8 = (norm * 255).astype(np.uint8)
+            cv2.imwrite(str(path), img_u8)
+        else:
+            import matplotlib.cm as mcm
+            rgba = (mcm.get_cmap(cmap)(norm) * 255).astype(np.uint8)
+            cv2.imwrite(str(path), cv2.cvtColor(rgba[:, :, :3], cv2.COLOR_RGB2BGR))
+        print(f"    clean → {path}")
+
+    for i, name in enumerate(MODALITY_NAMES):
+        _imsave(input_np[i],     clean_dir / f"fm_original_{name}.png",    "gray", 0, 1)
+        _imsave(recon_np[i],     clean_dir / f"fm_recon_{name}.png",       "gray", 0, 1)
+        dm = diff_maps[i]
+        _imsave(dm,              clean_dir / f"fm_anomaly_map_{name}.png",  "jet",
+                0, float(dm.max()) if dm.max() > 0 else 1.0)
+        _imsave(binary_masks[i], clean_dir / f"fm_binary_mask_{name}.png", "gray", 0, 1)
+
+    vmax_c = float(combined_diff.max()) if combined_diff.max() > 0 else 1.0
+    _imsave(combined_diff,   clean_dir / "fm_anomaly_map_combined.png",  "jet",  0, vmax_c)
+    _imsave(combined_binary, clean_dir / "fm_binary_mask_combined.png",  "gray", 0, 1)
+    _imsave(gt_2d,           clean_dir / "fm_gt_mask.png",               "gray", 0, 1)
+    # combined input/recon: mean of T2+FLAIR (indices 2,3)
+    _imsave(input_np[[2,3]].mean(0),  clean_dir / "fm_original_combined.png", "gray", 0, 1)
+    _imsave(recon_np[[2,3]].mean(0),  clean_dir / "fm_recon_combined.png",    "gray", 0, 1)
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
+    print("FM: Entering main()", flush=True)
     args = get_args()
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
 
     device        = torch.device(args.device)
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
     split_file    = args.split_file    or os.path.join(args.data_path, "preprocessed_split.json")
 
     name_to_idx = {n: i for i, n in enumerate(MODALITY_NAMES)}
@@ -740,30 +809,35 @@ def main():
 
     with open(split_file) as f:
         split = json.load(f)
-    val_entries = split["val"]          # list of {"path": ..., "label": ...}
-    print(f"Val set: {len(val_entries)} slices  (from {split_file})")
+    split_key = getattr(args, "split", "val")
+    val_entries = split[split_key]
+    print(f"{split_key.capitalize()} set: {len(val_entries)} slices  (from {split_file})")
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    order           = np.random.permutation(len(val_entries))
-    unhealthy_count = 0
-    healthy_count   = 0
-    all_uh_metrics  = []
-    all_h_metrics   = []
-    all_times       = []
+    n_uh_total = sum(1 for e in val_entries if e["label"] == 1)
+    n_h_total  = sum(1 for e in val_entries if e["label"] == 0)
+
+    if args.target_idx:
+        order = [int(i.strip()) for i in args.target_idx.split(",") if i.strip()]
+        cap_uh = n_uh_total
+        cap_h  = n_h_total
+    else:
+        order = np.random.permutation(len(val_entries))
+        cap_uh = n_uh_total if args.num_unhealthy < 0 else args.num_unhealthy
+        cap_h = n_h_total if args.num_healthy < 0 else args.num_healthy
+
+    unhealthy_count = healthy_count = 0
+    all_uh_metrics, all_h_metrics, all_times = [], [], []
 
     csv_file = open(output_dir / "metrics.csv", "w")
     csv_file.write("idx,label,modality,dice,iou,auroc,psnr,ssim,time_s\n")
 
-    n_uh_total = sum(1 for e in val_entries if e["label"] == 1)
-    n_h_total  = sum(1 for e in val_entries if e["label"] == 0)
-    cap_uh = n_uh_total if args.num_unhealthy < 0 else args.num_unhealthy
-    cap_h  = n_h_total  if args.num_healthy   < 0 else args.num_healthy
     print(f"Targeting {cap_uh} unhealthy + {cap_h} healthy samples "
-          f"(val pool: {n_uh_total} unhealthy, {n_h_total} healthy)")
+          f"({split_key} pool: {n_uh_total} unhealthy, {n_h_total} healthy)")
 
-    pbar = tqdm(total=cap_uh + cap_h, dynamic_ncols=True)
+    pbar = tqdm(total=1, dynamic_ncols=True)
     # Use the 'combined' row (union over T2/FLAIR / etc) for the live display.
     # The final summary still reports every row including 'best'.
     live_key = "combined"
@@ -802,9 +876,10 @@ def main():
         pbar.set_postfix(post, refresh=True)
 
     for raw_idx in order:
+        print(f"Processing raw_idx={raw_idx} (unhealthy_count={unhealthy_count}, cap_uh={cap_uh})", flush=True)
         if unhealthy_count >= cap_uh and healthy_count >= cap_h:
             break
-
+        
         idx   = int(raw_idx)
         entry = val_entries[idx]
         try:
@@ -886,13 +961,23 @@ def main():
             csv_file.flush()
 
             tag = "unhealthy" if label_int == 1 else "healthy"
-            visualize_sample(
-                input_np, recon_np, diff_maps, binary_masks,
-                combined_diff, combined_binary, gt_np,
-                label_int, mdict, idx,
-                output_dir / f"sample_{idx}_{tag}.png",
-                elapsed=elapsed,
-            )
+            if not getattr(args, "no_images", False) and args.save_clean_idx != idx:
+                visualize_sample(
+                    input_np, recon_np, diff_maps, binary_masks,
+                    combined_diff, combined_binary, gt_np,
+                    label_int, mdict, idx,
+                    output_dir / f"sample_{idx}_{tag}.png",
+                    elapsed=elapsed,
+                )
+            # ── Clean individual images for the target sample ──────────────
+            if not getattr(args, "no_images", False) and args.save_clean_idx >= 0 and idx == args.save_clean_idx:
+                print(f"  [clean] Saving individual images for idx={idx}")
+                base_d = Path(args.clean_base_dir) if args.clean_base_dir else (output_dir / "clean")
+                save_clean_images(
+                    input_np, recon_np, diff_maps, binary_masks,
+                    combined_diff, combined_binary, gt_np,
+                    base_d / str(idx),
+                )
             # Per-sample one-liner: 'combined' row metric for THIS sample +
             # running mean for the matching pool (UH or H — not both).
             means = _running_means()
