@@ -25,7 +25,13 @@ pip install -r requirements.txt
 pip install kaggle
 # Place kaggle.json in ~/.kaggle/
 kaggle datasets download minhdon/brats2021-preprocessed
+mkdir -p data
 unzip brats2021-preprocessed.zip -d data/
+# The zip extracts as data/brats2021-preprocessed/brats2021/ — flatten it:
+mv data/brats2021-preprocessed/brats2021 data/brats2021
+rm -rf data/brats2021-preprocessed brats2021-preprocessed.zip
+# Copy the official split file from the repo into the data directory:
+cp preprocessed_split_train_val_test.json data/brats2021/
 ```
 
 The dataset contains:
@@ -38,6 +44,28 @@ The dataset contains:
 ```bash
 python process_brats.py --data_dir /path/to/BraTS2021_Training_Data --output_dir ./data/brats2021
 python create_brats_split.py --data_path ./data/brats2021
+```
+
+## Pretrained Checkpoint
+
+Download the pretrained BraTS checkpoint (epoch 11) from HuggingFace:
+
+```bash
+pip install huggingface_hub
+python -c "
+from huggingface_hub import hf_hub_download
+hf_hub_download(
+    repo_id='minh2k4/brats-flow-matching-perbatch',
+    filename='checkpoint_epoch0011.pth',
+    local_dir='./output_brats'
+)
+"
+```
+
+Or with the CLI:
+
+```bash
+huggingface-cli download minh2k4/brats-flow-matching-perbatch checkpoint_epoch0011.pth --local-dir ./output_brats
 ```
 
 ## Training
