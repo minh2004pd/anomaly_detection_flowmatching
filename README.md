@@ -4,7 +4,7 @@ Flow Matching generative model applied to unsupervised brain tumor anomaly detec
 
 ## Method
 
-1. Train a conditional flow matching UNet on **healthy** brain MRI slices (label=0) with classifier-free guidance
+1. Train a conditional flow matching UNet on brain MRI slices (healthy + unhealthy) with classifier-free guidance
 2. At inference, partially encode a test scan to timestep `t` (data → noisy latent), then decode back toward the healthy distribution using CFG
 3. The pixel-wise reconstruction difference (MAD) is thresholded with Otsu + post-processing to produce a tumor mask
 4. Evaluated with DICE, IoU, and AUROC on the BraTS2021 test split
@@ -51,20 +51,6 @@ python create_brats_split.py --data_path ./data/brats2021
 Download the pretrained BraTS checkpoint (epoch 11) from HuggingFace:
 
 ```bash
-pip install huggingface_hub
-python -c "
-from huggingface_hub import hf_hub_download
-hf_hub_download(
-    repo_id='minh2k4/brats-flow-matching-perbatch',
-    filename='checkpoint_epoch0011.pth',
-    local_dir='./output_brats'
-)
-"
-```
-
-Or with the CLI:
-
-```bash
 huggingface-cli download minh2k4/brats-flow-matching-perbatch checkpoint_epoch0011.pth --local-dir ./output_brats
 ```
 
@@ -74,13 +60,18 @@ huggingface-cli download minh2k4/brats-flow-matching-perbatch checkpoint_epoch00
 # Quick smoke test (1 step, no data required)
 python train.py --dataset=cifar10 --test_run
 
-# Train on BraTS2021 — healthy + unhealthy slices, class-conditional
+# Train on BraTS2021
 python train.py \
-  --dataset=brats \
+  --dataset=bratsv2 \
   --data_path=./data/brats2021 \
-  --split_file=./data/brats2021/preprocessed_split_train_val_test.json \
-  --batch_size=16 \
-  --epochs=200 \
+  --use_preprocessed \
+  --batch_size=4 \
+  --accum_iter=8 \
+  --epochs=50 \
+  --lr=1e-4 \
+  --lr_scheduler=cosine \
+  --precision=bf16 \
+  --class_drop_prob=0.15 \
   --use_ema \
   --output_dir=./output_brats
 
@@ -88,17 +79,30 @@ python train.py \
 python train.py --resume ./output_brats/checkpoint.pth ...
 ```
 
-Use `train_brats.sh` for a ready-made training script:
+Or use the provided script:
 
 ```bash
-bash train_brats.sh
+bash train_brats.sh --v2
 ```
+
+Key training parameters:
+
+| Parameter | Description | Default |
+|---|---|---|
+| `--dataset` | Architecture: `brats` (4-level) or `bratsv2` (5-level) | `bratsv2` |
+| `--use_preprocessed` | Load from `.npy` slices (required for BraTS) | — |
+| `--batch_size` | Batch size per GPU | `4` |
+| `--accum_iter` | Gradient accumulation steps (effective batch = batch × accum) | `8` |
+| `--precision` | Training precision: `fp32`, `fp16`, `bf16` | `bf16` |
+| `--class_drop_prob` | Label dropout probability for classifier-free guidance | `0.15` |
+| `--use_ema` | Use EMA weights at evaluation | — |
+| `--lr_scheduler` | LR schedule: `constant`, `linear`, `cosine` | `cosine` |
 
 ## Anomaly Detection Inference
 
 ```bash
 python infer_anomaly.py \
-  --checkpoint ./output_brats/checkpoint.pth \
+  --checkpoint ./output_brats/checkpoint_epoch0011.pth \
   --arch bratsv2 \
   --data_path ./data/brats2021 \
   --split_file ./data/brats2021/preprocessed_split_train_val_test.json \
@@ -107,24 +111,31 @@ python infer_anomaly.py \
   --t 0.2 \
   --step_size 0.02 \
   --combined_modalities T2,FLAIR \
+  --num_unhealthy 1000 \
+  --num_healthy 1000 \
   --output_dir ./anomaly_results
 ```
 
-Key parameters:
+Or use the provided script:
+
+```bash
+bash execute_anomaly_detection.sh --v2
+```
+
+Key inference parameters:
 
 | Parameter | Description | Best value |
 |---|---|---|
-| `--t` | Encode endpoint (0=pure noise, 1=clean). Lower → stronger erasure | 0.2 |
-| `--cfg_scale` | Classifier-free guidance scale | 0.5 |
-| `--step_size` | Euler ODE step size. Smaller → more accurate | 0.02 |
-| `--combined_modalities` | Modalities to union for the combined mask | T2,FLAIR |
-| `--arch` | Model architecture: `brats` or `bratsv2` | bratsv2 |
-
-Use `execute_anomaly_detection.sh` for a full evaluation run:
-
-```bash
-bash execute_anomaly_detection.sh
-```
+| `--t` | Encode endpoint (0=pure noise, 1=clean). Lower → stronger erasure | `0.2` |
+| `--cfg_scale` | Classifier-free guidance scale | `0.5` |
+| `--step_size` | Euler ODE step size. Smaller → more accurate | `0.02` |
+| `--combined_modalities` | Modalities to union for the combined mask | `T2,FLAIR` |
+| `--arch` | Model architecture: `brats` or `bratsv2` | `bratsv2` |
+| `--split` | Evaluation split: `val` or `test` | `test` |
+| `--num_unhealthy` | Number of unhealthy slices to evaluate (`-1` = all) | `-1` |
+| `--num_healthy` | Number of healthy slices to evaluate (`-1` = all) | `-1` |
+| `--min_component_size` | Drop connected components smaller than this (pixels) | `100` |
+| `--border_erosion` | Brain rim thickness for edge-artefact suppression | `3` |
 
 ## Hyperparameter Grid Search
 
@@ -134,7 +145,7 @@ Coordinate-descent sweep over `cfg_scale` → `t` → `step_size`:
 # Phase 1: cfg_scale sweep (t=0.2, step=0.02)
 SPLIT_FILE=./data/brats2021/preprocessed_split_train_val_test.json \
 SPLIT=val \
-CHECKPOINT_OVERRIDE=./output_brats/checkpoint.pth \
+CHECKPOINT_OVERRIDE=./output_brats/checkpoint_epoch0011.pth \
 NUM_UNHEALTHY=1000 NUM_HEALTHY=1000 \
 bash run_grid.sh auto --v2
 
@@ -169,11 +180,13 @@ python create_brats_split.py \
 
 ```
 ├── train.py                     # Training script
+├── train_brats.sh               # Ready-made BraTS training script
 ├── infer_anomaly.py             # Anomaly detection inference + metrics
-├── run_grid.sh                  # Coordinate-descent hyperparameter sweep
 ├── execute_anomaly_detection.sh # Full evaluation pipeline
+├── run_grid.sh                  # Coordinate-descent hyperparameter sweep
 ├── create_brats_split.py        # Generate train/val/test splits
 ├── process_brats.py             # Raw NIfTI → .npy preprocessing
+├── preprocessed_split_train_val_test.json  # Official train/val/test split
 ├── flow_matching/               # Core flow matching library
 │   ├── path/                    # Probability paths (OT, Affine, Geodesic)
 │   ├── loss/                    # Flow matching loss
@@ -184,7 +197,8 @@ python create_brats_split.py \
 ├── training/
 │   ├── train_loop.py            # Training loop
 │   └── classifier_guidance.py   # CFG implementation
-└── preprocessed_split_train_val_test.json  # Official train/val/test split
+└── datasets/
+    └── brats.py                 # BraTS dataset loader
 ```
 
 ## Results
