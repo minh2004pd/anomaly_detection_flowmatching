@@ -208,7 +208,7 @@ case "$PHASE" in
         #                                  used 4-mod combined).
         # Combined with Run B (cfg=1.0) and old Run D (cfg=3.0, 4-mod), we
         # get six cfg points spanning [0.5, 3.0] for the ablation chart.
-        for cfg in 0.5 0.7 1.5 2.0; do
+        for cfg in ${CFG_LIST:-0.5 0.7 1.5 2.0}; do
             run_one 0.2 0.02 "$cfg" 1
         done
         echo ""
