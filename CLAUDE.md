@@ -2,101 +2,145 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Setup
+
+```bash
+pip install -r requirements.txt
+# or with uv (pins CUDA 12.8 wheels):
+uv sync
+```
+
+Environment variables used at runtime: `HF_REPO`, `HF_TOKEN` (auto-upload checkpoints to HuggingFace), `HF_RESULTS_REPO` (auto-upload grid search results).
+
 ## Commands
 
 ### Training
 
 ```bash
-# Quick validation (one train step + one eval step)
+# Quick smoke test (1 step, no data required)
 python train.py --dataset=cifar10 --test_run
 
-# Local single-GPU training
-python train.py --dataset=cifar10 --batch_size=64 --epochs=20 --output_dir=./output_cifar10
+# BraTS2021 (recommended settings)
+python train.py \
+  --dataset=bratsv2 \
+  --data_path=./data/brats2021 \
+  --use_preprocessed \
+  --batch_size=4 --accum_iter=8 \
+  --epochs=50 --lr=1e-4 \
+  --lr_scheduler=cosine \
+  --precision=bf16 \
+  --class_drop_prob=0.15 \
+  --use_ema \
+  --output_dir=./output_brats
 
-# With EMA + EDM schedule (matches published CIFAR-10 results)
-python train.py --dataset=cifar10 --use_ema --edm_schedule --skewed_timesteps --epochs=1800
+# Resume
+python train.py --resume ./output_brats/checkpoint.pth ...
 
-# BraTS medical imaging (conditional on healthy/unhealthy)
-python train.py --dataset=brats --data_path=./data/brats2021 --healthy_only
+# Convenience script
+bash train_brats.sh --v2
 
-# Discrete flow matching (categorical tokens, vocab_size=257)
-python train.py --dataset=cifar10 --discrete_flow_matching --epochs=2500
-
-# SLURM cluster submission
+# SLURM
 python submitit_train.py --nodes=8 --ngpus=8 --dataset=cifar10
+
+# Eval-only (generates samples + optional FID, no training)
+python train.py --eval_only --resume ./output_dir/checkpoint.pth --compute_fid
 ```
 
-### Inference
+Key training flags: `--precision {fp32,fp16,bf16}`, `--lr_scheduler {constant,linear,cosine}`, `--warmup_epochs`, `--healthy_only` (unconditional, inpaints tumors), `--discrete_flow_matching`.
+
+### Anomaly Detection Inference
 
 ```bash
-# Generate images from a checkpoint
-python infer.py --checkpoint ./output_mnist/checkpoint.pth --labels 0 1 2 3 4 5 6 7 8 9
-python infer.py --checkpoint ./output_mnist/checkpoint.pth --labels 7 --num_per_label 16
-python infer.py --checkpoint ./output_mnist/checkpoint.pth --labels 3 5 --cfg_scale 4.0
+python infer_anomaly.py \
+  --checkpoint ./output_brats/checkpoint_epoch0011.pth \
+  --arch bratsv2 \
+  --data_path ./data/brats2021 \
+  --split_file ./data/brats2021/preprocessed_split_train_val_test.json \
+  --split test \
+  --cfg_scale 0.5 --t 0.2 --step_size 0.02 \
+  --combined_modalities T2,FLAIR \
+  --num_unhealthy 1000 --num_healthy 1000 \
+  --output_dir ./anomaly_results
 
-# BraTS anomaly detection (tumor segmentation via healthy→unhealthy flow reversal)
-python infer_anomaly.py --checkpoint ./output_brats/checkpoint.pth \
-  --data_path ./data/brats2021 --cfg_scale 8.0 --t 0.8 --step_size 0.02
-
-# Evaluate a checkpoint (FID + sample snapshots, no training)
-python train.py --eval_only --resume ./output_dir/checkpoint-899.pth --compute_fid
+# Convenience script
+bash execute_anomaly_detection.sh --v2
 ```
 
-### Hyperparameter Sweeps (BraTS anomaly detection)
+Outputs: `metrics.csv`, `summary.txt`, per-sample PNG grids in `--output_dir`.
+
+### Hyperparameter Grid Search
+
+Coordinate-descent sweep over `cfg_scale → t → step_size` on the val split:
 
 ```bash
-python run_experiments.py 1              # Phase 1: optimize interpolation t
-python run_experiments.py 2 0.6          # Phase 2: optimize cfg_scale given best_t
-python run_experiments.py 3 0.6 20.0     # Phase 3: optimize step_size given best_t & best_cfg
+# Fully automated (reads best from each phase)
+SPLIT_FILE=./data/brats2021/preprocessed_split_train_val_test.json \
+SPLIT=val CHECKPOINT_OVERRIDE=./output_brats/checkpoint_epoch0011.pth \
+NUM_UNHEALTHY=1000 NUM_HEALTHY=1000 \
+bash run_grid.sh auto --v2
+
+# Manual phases
+bash run_grid.sh 1 --v2                  # Phase 1: cfg_scale sweep
+bash run_grid.sh 2 0.5 --v2             # Phase 2: t sweep (best cfg=0.5)
+bash run_grid.sh 3 0.2 0.5 --v2         # Phase 3: step_size sweep
+```
+
+### Data Preparation
+
+```bash
+# Preprocess raw NIfTI
+python process_brats.py --data_dir /path/to/BraTS2021_Training_Data --output_dir ./data/brats2021
+python create_brats_split.py --data_path ./data/brats2021 --train_ratio 0.8 --seed 42
+
+# Or download preprocessed from Kaggle (see README)
 ```
 
 ## Architecture
 
-### Core Library (`flow_matching/`)
+### Flow Matching Library (`flow_matching/`)
 
-The `flow_matching/` package implements the generative modeling primitives:
+Custom implementation of the flow matching framework:
 
-- **`path/`** — probabilistic interpolation paths between noise and data:
-  - `CondOTProbPath` (conditional optimal transport), `AffineProbPath`, `GeodesicProbPath` (sphere/torus manifolds), `MixtureDiscreteProbPath` (for discrete tokens)
-  - `scheduler/` — time discretization schedules for discrete flows
-- **`loss/`** — `GeneralizedFlowMatchingLoss`, dispatches to continuous MSE or discrete cross-entropy based on path type
-- **`solver/`** — ODE integration: `ODESolver` (wraps `torchdiffeq` dopri5/RK45), `DiscreteSolver` (Euler + Gumbel-max sampling), `RiemannianODESolver`
-- **`utils/`** — manifold definitions (Sphere, Torus), samplers, model wrappers
+- **`path/`** — probabilistic interpolation paths: `CondOTProbPath` (conditional optimal transport, default for BraTS), `AffineProbPath`, `GeodesicProbPath` (sphere/torus manifolds), `MixtureDiscreteProbPath` (categorical tokens). `CondOTScheduler` defines `alpha_t=t, sigma_t=1−t`, so `x_t = (1−t)·noise + t·data`.
+- **`loss/`** — `GeneralizedFlowMatchingLoss`: dispatches to MSE (continuous) or cross-entropy (discrete) based on path type.
+- **`solver/`** — ODE integration: `ODESolver` (wraps `torchdiffeq`; dopri5/Euler/midpoint), `DiscreteSolver` (Euler + Gumbel-max), `RiemannianODESolver`.
+- **`utils/`** — manifold definitions (Sphere, Torus), `ModelWrapper` (adapts UNet signature for solver), samplers.
 
 ### Models (`models/`)
 
-- **`UNetModel`** (`unet.py`) — continuous flow model; outputs velocity field
-- **`DiscreteUNetModel`** (`discrete_unet.py`) — categorical prediction model; outputs logits over 257 tokens
-- **`MODEL_CONFIGS`** (`model_configs.py`) — dataset-specific hyperparameters keyed by dataset name; instantiate models through this dict
-- **`EMAModel`** (`ema.py`) — wraps any model to maintain an exponential moving average of weights
-- **`ClassifierModel`** (`classifier.py`) — auxiliary classifier for guided generation
+- **`UNetModel`** (`unet.py`) — continuous flow model; outputs velocity field `v(x_t, t, label)`.
+- **`DiscreteUNetModel`** (`discrete_unet.py`) — outputs logits over vocab_size=257 tokens.
+- **`MODEL_CONFIGS`** (`model_configs.py`) — all architecture hyperparameters keyed by dataset name. `instantiate_model(architecture, is_discrete, use_ema)` is the single entry point. Key configs: `brats` (4-level UNet, `channel_mult=[1,2,4,4]`), `bratsv2` (5-level, adds 16×16 bottleneck stage with attention, recommended), `brats_healthy` (unconditional, `num_classes=None`).
+- **`EMA`** (`ema.py`) — wraps any model; `use_ema=True` passes EMA weights at eval time.
 
-All models accept a continuous timestep `t ∈ [0, 1]` (0 = noise, 1 = data) and an optional class label.
+All models accept `(x, t, extra={"label": ...})` where `t ∈ [0,1]` (0=noise, 1=data) and `extra` is empty for unconditional.
 
 ### Training Infrastructure (`training/`)
 
-The training loop in `train_loop.py` follows:
-1. Sample `t ~ U[0,1]` (or EDM log-normal skew schedule)
-2. Compute interpolated `x_t` via the chosen probabilistic path
-3. Forward pass with `(x_t, t, label)` conditioning
-4. Flow matching loss (MSE for continuous, cross-entropy for discrete)
-5. Mixed-precision backward + AdamW optimizer + optional LR scheduler
+`train_loop.py` core loop: sample `t ~ U[0,1]` → compute `x_t` via prob path → forward `(x_t, t, label)` → flow matching loss → mixed-precision backward with AdamW.
 
-Key modules:
-- `eval_loop.py` — generates samples and optionally computes FID via `torchmetrics`
-- `classifier_guidance.py` — classifier-free guidance: trains with random label dropout (`class_drop_prob`), inference interpolates conditioned vs. unconditioned predictions
-- `distributed_mode.py` — DDP setup; `submitit_train.py` handles SLURM job submission
-- `load_and_save.py` — checkpoint I/O; saves `args.json` alongside weights for reproducibility
-- `edm_time_discretization.py` — EDM-paper Heun2 integrator and time schedules
+- `classifier_guidance.py` — `CFGScaledModel` wrapper: interpolates conditioned vs. unconditioned predictions at inference with `cfg_scale`. Label dropout during training (controlled by `--class_drop_prob`) enables CFG at inference.
+- `eval_loop.py` — generates samples, optionally computes FID via `torchmetrics[image]`. `CFGScaledModel` is also imported by `infer_anomaly.py`.
+- `distributed_mode.py` — DDP setup; `submitit_train.py` handles SLURM submission.
+- `load_and_save.py` — checkpoint format: `{model, optimizer, lr_scheduler, loss_scaler, epoch}`. Always writes `args.json` alongside weights (required by `infer_anomaly.py` to reconstruct the model arch).
+- `edm_time_discretization.py` — EDM-paper Heun2 integrator and skewed log-normal timestep schedule.
 
-### Data Flow for BraTS Anomaly Detection
+### BraTS Anomaly Detection Pipeline (`infer_anomaly.py`)
 
-The anomaly detection pipeline (`infer_anomaly.py`) trains a model conditioned on healthy (class 0) vs. unhealthy (class 1) brain MRI scans. At inference, a diseased image is partially noised to timestep `t` then denoised back toward the healthy distribution using negative classifier-free guidance. The reconstruction difference (MAD) is thresholded with Otsu to produce a tumor segmentation mask; DICE and IoU are reported.
+1. **Encode**: reverse ODE `t=1 → t_start` with unconditional velocity (class-agnostic; `--encode_label` can optionally condition this).
+2. **Decode**: forward ODE `t_start → t=1` with CFG toward healthy label (class=0).
+3. **Anomaly map**: `|input − recon|` per modality, brain-masked, Otsu-thresholded (`--hysteresis` for alternative).
+4. **Post-processing**: remove small connected components (`--min_component_size`), suppress brain-border artefacts (`--border_erosion`, `--border_overlap_thr`).
+5. **Combined mask**: union of per-modality binary masks over `--combined_modalities` (best: `T2,FLAIR`).
+6. **Metrics**: DICE/IoU/AUROC for unhealthy slices; PSNR/SSIM for healthy slices.
+
+`--cfg_zero_star` enables CFG-Zero* (optimized scale projection + zero-init steps). `--encode_label 1 --encode_cfg_scale >0` pushes the latent deeper into the unhealthy manifold before decoding.
 
 ## Key Conventions
 
-- **Timestep direction**: `t=0` is pure noise, `t=1` is clean data. The `CondOTScheduler` defines `alpha_t=t, sigma_t=1−t`, so `x_t = (1−t)·noise + t·data` (see `flow_matching/path/affine.py` and `scheduler/scheduler.py`). Sampling integrates from `t=0 → t=1`. In `infer_anomaly.py`, `--t` is the *encode endpoint*: encode runs `t=1 → t_start` (data → noisier), decode runs `t_start → t=1` (noisy → reconstructed). **Smaller `--t` ⇒ closer to pure noise ⇒ stronger erasure of input structure.**
-- **Checkpoint format**: dict with keys `model`, `optimizer`, `lr_scheduler`, `loss_scaler`, `epoch`. Resume with `--resume <path>`.
-- **Discrete models**: use `--discrete_flow_matching`; vocab size is always 257 (256 pixel values + 1 mask token); requires `MixtureDiscreteProbPath` and `DiscreteUNetModel`.
-- **FID computation**: requires `--compute_fid`; uses `torchmetrics[image]` and generates 50k samples against the training set.
-- **Output directory**: each run writes `checkpoint.pth`, `checkpoint-<epoch>.pth`, `args.json`, `log.txt`, and `snapshots/` to `--output_dir`.
+- **Timestep direction**: `t=0` is pure noise, `t=1` is clean data. Sampling integrates `t=0 → t=1`. In `infer_anomaly.py`, `--t` is the encode endpoint: smaller `--t` ⇒ closer to pure noise ⇒ stronger structural erasure.
+- **`args.json` dependency**: `infer_anomaly.py` reads `args.json` from the checkpoint directory to reconstruct the model architecture. Keep `args.json` alongside every checkpoint.
+- **Discrete models**: `--discrete_flow_matching`; vocab_size fixed at 257 (256 pixel values + 1 mask token); requires `MixtureDiscreteProbPath` and `DiscreteUNetModel`.
+- **Dataset key doubles as arch key**: the `--dataset` argument passed to `train.py` is the key into `MODEL_CONFIGS`; `--arch` in `infer_anomaly.py` overrides the dataset key read from `args.json`.
+- **Output directory**: each run writes `checkpoint.pth`, `checkpoint-<epoch>.pth`, `args.json`, `log.txt`, and `snapshots/`.
+- **W&B logging**: opt-in with `--wandb --wandb_project <name>`.

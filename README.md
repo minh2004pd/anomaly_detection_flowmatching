@@ -98,6 +98,24 @@ Key training parameters:
 | `--use_ema` | Use EMA weights at evaluation | — |
 | `--lr_scheduler` | LR schedule: `constant`, `linear`, `cosine` | `cosine` |
 
+## Interactive Demo (Gradio)
+
+A browser-based demo with step-by-step ODE visualisation:
+
+```bash
+bash run_demo.sh
+# → http://localhost:7860
+```
+
+Features:
+- **Folder picker** — select any case from `data/brats2021/unhealthy/` directly, or upload a custom `.npy` file
+- **Step-by-step encoding gallery** — every Euler step of the reverse ODE (t = 1 → t_start), shown as a 4-modality strip with a red progress bar
+- **Step-by-step decoding gallery** — every Euler step of the forward ODE (t_start → 1), shown with a green progress bar
+- **Result grid** — original / reconstructed / anomaly map (jet colormap) / binary mask / GT mask for all 4 modalities + combined row
+- **Metrics table** — DICE, IoU, AUROC per modality and combined (shown when a `_seg.npy` GT is available)
+
+Tunable parameters in the UI: `t_start`, `step_size`, `cfg_scale`, `save_every` (snapshot interval).
+
 ## Anomaly Detection Inference
 
 ```bash
@@ -184,6 +202,8 @@ python create_brats_split.py \
 ├── infer_anomaly.py             # Anomaly detection inference + metrics
 ├── execute_anomaly_detection.sh # Full evaluation pipeline
 ├── run_grid.sh                  # Coordinate-descent hyperparameter sweep
+├── demo.py                      # Gradio interactive demo
+├── run_demo.sh                  # Launch script for the demo
 ├── create_brats_split.py        # Generate train/val/test splits
 ├── process_brats.py             # Raw NIfTI → .npy preprocessing
 ├── preprocessed_split_train_val_test.json  # Official train/val/test split

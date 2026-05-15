@@ -16,3 +16,4 @@ env/
 logs/
 *.log
 snapshots/
+infer_output/
